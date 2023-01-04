@@ -50,6 +50,8 @@ class McprepMaterialProps():
 				"Use a simple shader setup with no PBR or emission falloff."))
 		itms.append(("specular", "Specular", "Sets the pack format to Specular."))
 		itms.append(("seus", "SEUS", "Sets the pack format to SEUS."))
+		if util.exp():
+			itms.append(("custom", "Custom (Experimental)", "Use pre-defined custom node group. This will turn on using custom node group"))
 		return itms
 
 	animateTextures = bpy.props.BoolProperty(
@@ -119,6 +121,11 @@ class McprepMaterialProps():
 		description="Change the pack format when using a PBR resource pack.",
 		items=pack_formats
 	)
+	useNodegroup = bpy.props.BoolProperty(
+		name="Use node group (Experimental)",
+		description="Use node group asset in the node tree",
+		default=False
+	)
 
 
 def draw_mats_common(self, context):
@@ -149,7 +156,13 @@ def draw_mats_common(self, context):
 	col.prop(self, "combineMaterials")
 	row = self.layout.row()
 	row.prop(self, "optimizeScene")
-
+	row = self.layout.row()
+	if util.exp():
+		row.prop(self, "useNodegroup")
+	if self.packFormat == "custom":
+		scn_props = context.scene.mcprep_props
+		row = self.layout.row()
+		row.prop_search(scn_props, "material_node_group", bpy.data, "node_groups", text="", icon = 'NODETREE')
 
 class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 	"""Fixes materials and textures on selected objects for Minecraft rendering"""
@@ -237,16 +250,25 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 				if res == 0:
 					count += 1
 			elif engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
+				node_tree = context.scene.mcprep_props.material_node_group
+				if node_tree and node_tree.type != 'SHADER':
+					self.report(
+						{'ERROR'},
+						"Only use Shader Node Group, not " + node_tree.type)
+					return {'CANCELLED'}					
 				res = generate.matprep_cycles(
-					mat, passes, self.useReflections,
-					self.usePrincipledShader, self.makeSolid, self.packFormat)
+						mat, passes, self.useReflections,
+						self.usePrincipledShader, self.makeSolid, self.packFormat, self.useNodegroup)
 				if res == 0:
 					count += 1
 			else:
-				self.report(
-					{'ERROR'},
-					"Only Blender Internal, Cycles, and Eevee are supported")
-				return {'CANCELLED'}
+				if not util.exp():
+					self.report(
+						{'ERROR'},
+						"Only Blender Internal, Cycles, and Eevee are supported")
+					return {'CANCELLED'}
+				else:
+					self.report({"INFO"},'Experimental. Prepped')
 
 			if self.animateTextures:
 				sequences.animate_single_material(
@@ -621,7 +643,7 @@ class MCPREP_OT_load_material(bpy.types.Operator, McprepMaterialProps):
 		elif engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
 			res = generate.matprep_cycles(
 				mat, passes, self.useReflections,
-				self.usePrincipledShader, self.makeSolid, self.packFormat)
+				self.usePrincipledShader, self.makeSolid, self.packFormat, self.useNodegroup)
 		else:
 			return False, "Only Blender Internal, Cycles, or Eevee supported"
 
@@ -630,6 +652,78 @@ class MCPREP_OT_load_material(bpy.types.Operator, McprepMaterialProps):
 		if self.animateTextures:
 			sequences.animate_single_material(
 				mat, context.scene.render.engine)
+
+		return success, None
+
+class MCPREP_OT_load_texture(bpy.types.Operator):
+	"""Load the select texture from the active resource pack to active material"""
+	bl_idname = "mcprep.load_texture"
+	bl_label = "Generate texture"
+	bl_description = (
+		"Generate and add image texture nodes based on active resource pack")
+	bl_options = {'REGISTER', 'UNDO'}
+
+	filepath = bpy.props.StringProperty(default="")
+	skipUsage = bpy.props.BoolProperty(default=False, options={'HIDDEN'})
+	useExtraMaps = True
+
+	@classmethod
+	def poll(cls, context):
+		return context.object
+
+	# def invoke(self, context, event):
+	# 	return {'FINISHED'}
+
+	# def draw(self, context):
+	# 	draw_mats_common(self, context)
+
+	track_function = "generate_tex"
+	track_param = None
+	@tracking.report_error
+	def execute(self, context):
+		mat_name = os.path.splitext(os.path.basename(self.filepath))[0]
+		if not os.path.isfile(self.filepath):
+			self.report({"ERROR"}, (
+				"File not found! Reset the resource pack under advanced "
+				"settings (return arrow icon) and press reload materials"))
+			return {'CANCELLED'}
+
+		mat = context.object.active_material
+		res, err = self.add_texture(context, mat, self.filepath)
+		if res is False and err:
+			self.report({"ERROR"}, err)
+			return {'CANCELLED'}
+		elif res is False:
+			self.report({"ERROR"}, "Failed to generate textures")
+			return {'CANCELLED'}
+
+		self.track_param = context.scene.render.engine
+		return {'FINISHED'}
+
+	def add_texture(self, context, mat, path):
+		"""Update the initially created material"""
+		image = bpy.data.images.load(path, check_existing=True)
+
+		engine = context.scene.render.engine
+		passes = generate.get_textures(mat)
+		conf.log("Load Mat Passes:" + str(passes), vv_only=True)
+		# if not self.useExtraMaps:
+		# 	for pass_name in passes:
+		# 		if pass_name != "diffuse":
+		# 			passes[pass_name] = None
+
+		
+		if engine == 'BLENDER_RENDER' or engine == 'BLENDER_GAME':
+			pass # temp
+		elif engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
+			generate.texgen(mat,passes)
+			res = 0
+			
+		else:
+			return False, "Only Blender Internal, Cycles, or Eevee supported"
+
+		success = res == 0
+
 
 		return success, None
 
@@ -644,6 +738,7 @@ classes = (
 	MCPREP_OT_materials_help,
 	MCPREP_OT_swap_texture_pack,
 	MCPREP_OT_load_material,
+	MCPREP_OT_load_texture,
 )
 
 
