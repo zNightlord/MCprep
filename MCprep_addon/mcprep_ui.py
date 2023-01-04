@@ -976,12 +976,13 @@ class MCPREP_PT_skins(bpy.types.Panel):
 					row.operator("mcprep.spawn_with_skin", text=tx)
 
 
-class MCPREP_PT_materials(bpy.types.Panel):
+class MCPREP_PT_materials():
 	"""MCprep panel for materials"""
-	bl_label = "MCprep materials"
-	bl_space_type = "PROPERTIES"
-	bl_region_type = 'WINDOW'
 	bl_context = "material"
+
+	def draw_individual(self, context):
+		# do nothing
+		pass
 
 	def draw(self, context):
 		"""Code for drawing the material generator"""
@@ -1003,7 +1004,7 @@ class MCPREP_PT_materials(bpy.types.Panel):
 			row = col.row(align=True)
 			row.scale_y = 1.5
 			mat = scn_props.material_list[scn_props.material_list_index]
-			ops = row.operator("mcprep.load_material", text="Load: " + mat.name)
+			ops = row.operator("mcprep.load_material", text="Load material: " + mat.name)
 			ops.filepath = mat.path
 		else:
 			box = col.box()
@@ -1018,14 +1019,40 @@ class MCPREP_PT_materials(bpy.types.Panel):
 			row = col.row(align=True)
 			row.scale_y = 1.5
 			ops = row.operator("mcprep.load_material", text="Load material")
+		self.draw_individual(context)
 
-
-class MCPREP_PT_materials_subsettings(bpy.types.Panel):
-	"""MCprep panel for advanced material settings and functions"""
-	bl_label = "Advanced"
-	bl_parent_id = "MCPREP_PT_materials"
+class MCPREP_PT_materials_properties(MCPREP_PT_materials, bpy.types.Panel):
+	bl_label = "MCprep materials"
 	bl_space_type = "PROPERTIES"
 	bl_region_type = 'WINDOW'
+
+class MCPREP_PT_materials_nodes(MCPREP_PT_materials, bpy.types.Panel):
+	bl_label = "MCprep"
+	bl_space_type = "NODE_EDITOR"
+	bl_region_type = 'UI'
+	bl_category = "MCprep"
+
+	def draw_individual(self, context):
+		"""Code for drawing the texture generator"""
+		scn_props = context.scene.mcprep_props
+
+		layout = self.layout
+		col = layout.column(align=True)
+		if scn_props.material_list:
+			row = col.row(align=True)
+			row.scale_y = 1.5
+			mat = scn_props.material_list[scn_props.material_list_index]
+			ops = row.operator("mcprep.load_texture", text="Load texture")
+			ops.filepath = mat.path
+		else:
+			col.enabled = False
+			row = col.row(align=True)
+			row.scale_y = 1.5
+			ops = row.operator("mcprep.load_texture", text="Load texture")
+
+class MCPREP_PT_materials_subsettings():
+	"""MCprep panel for advanced material settings and functions"""
+	bl_label = "Advanced"
 	bl_context = "material"
 
 	def draw(self, context):
@@ -1036,10 +1063,22 @@ class MCPREP_PT_materials_subsettings(bpy.types.Panel):
 		subrow.prop(context.scene, "mcprep_texturepack_path", text="")
 		subrow.operator(
 			"mcprep.reset_texture_path", icon=LOAD_FACTORY, text="")
-		b_row = self.layout.row()
+		b_row = self.layout.row(align=True)
 		b_col = b_row.column(align=True)
 		b_col.operator("mcprep.reload_materials")
+		b_row.operator(
+				"mcprep.open_preferences",
+				text="", icon="PREFERENCES").tab = "settings"
 
+class MCPREP_PT_materials_subsettings_props(MCPREP_PT_materials_subsettings, bpy.types.Panel):
+	bl_parent_id = "MCPREP_PT_materials_properties"
+	bl_space_type = "PROPERTIES"
+	bl_region_type = 'WINDOW'
+
+class MCPREP_PT_materials_subsettings_nodes(MCPREP_PT_materials_subsettings, bpy.types.Panel):
+	bl_space_type = "NODE_EDITOR"
+	bl_region_type = 'UI'
+	bl_parent_id = "MCPREP_PT_materials_nodes"
 
 # -----------------------------------------------------------------------------
 # Spawner related UI
@@ -1569,7 +1608,7 @@ class MCPREP_PT_mob_spawner(bpy.types.Panel):
 
 class MCPREP_PT_model_spawner(bpy.types.Panel):
 	"""MCprep panel for model/block spawning"""
-	bl_label = "Block (model) spawner"
+	bl_label = "Model spawner"
 	bl_parent_id = "MCPREP_PT_spawn"
 	bl_space_type = "VIEW_3D"
 	bl_region_type = 'TOOLS' if not util.bv28() else 'UI'
@@ -1577,11 +1616,17 @@ class MCPREP_PT_model_spawner(bpy.types.Panel):
 	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
+		layout = self.layout
+		scn_props = context.scene.mcprep_props
 		is_obj_mode = context.mode == "OBJECT"
 		if not is_obj_mode:
 			draw_mode_warning(self.layout)
 			return
-		model_spawner(self, context)
+		layout.prop(scn_props, 'mcprep_model_ui_type', text="Type: ", expand=True)
+		if scn_props.mcprep_model_ui_type == "DEFAULT":
+			model_spawner(self, context)
+		else:
+			meshswap_spawner(self, context)
 
 	def draw_header(self, context):
 		if not conf.use_icons or conf.preview_collections["main"] == "":
@@ -1776,6 +1821,13 @@ class McprepProps(bpy.types.PropertyGroup):
 		name="show spawner settings",
 		description="Show extra MCprep panel settings",
 		default=False)
+	mcprep_model_ui_type = bpy.props.EnumProperty(
+		name = "Model Spawn Type"
+		,items = [
+			('DEFAULT', 'Block', "Default block model json spawn"),
+			('MESH_SWAP', 'Mesh swap', "Premade blocks spawn")
+		]
+	)
 
 	# Rig settings
 	spawn_rig_category = bpy.props.EnumProperty(
@@ -1845,9 +1897,11 @@ classes = (
 	MCPREP_PT_item_spawner,
 	MCPREP_PT_effects_spawner,
 	MCPREP_PT_entity_spawner,
-	MCPREP_PT_meshswap_spawner,
-	MCPREP_PT_materials,
-	MCPREP_PT_materials_subsettings,
+	#MCPREP_PT_meshswap_spawner,
+	MCPREP_PT_materials_properties,
+	MCPREP_PT_materials_nodes,
+	MCPREP_PT_materials_subsettings_props,
+	MCPREP_PT_materials_subsettings_nodes,
 )
 
 
