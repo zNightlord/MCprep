@@ -384,17 +384,16 @@ def matprep_cycles(
 	# 	res = matgen_special_water(mat, passes)
 	# if use_reflections and checklist(canon, "glass"):
 	# 	res = matgen_special_glass(mat, passes)
-	if not util.exp():
-		if pack_format == "simple" and util.bv28():
-			res = matgen_cycles_simple(
-				mat, passes, use_reflections, use_emission, only_solid, use_principled)
-		elif use_principled and hasattr(bpy.types, 'ShaderNodeBsdfPrincipled'):
-			res = matgen_cycles_principled(
-				mat, passes, use_reflections, use_emission, only_solid, pack_format)
-		else:
-			res = matgen_cycles_original(
-				mat, passes, use_reflections, use_emission, only_solid, pack_format)
+	if pack_format == "simple" and util.bv28():
+		res = matgen_cycles_simple(
+			mat, passes, use_reflections, use_emission, only_solid, use_principled)
+	elif use_principled and hasattr(bpy.types, 'ShaderNodeBsdfPrincipled'):
+		res = matgen_cycles_principled(
+			mat, passes, use_reflections, use_emission, only_solid, pack_format)
 	else:
+		res = matgen_cycles_original(
+			mat, passes, use_reflections, use_emission, only_solid, pack_format)
+	if util.exp():
 		res = matgen(mat, passes,
 		use_reflections = use_reflections, use_emission = use_emission, only_solid = only_solid, 
 		pack_format = pack_format, 
@@ -477,45 +476,44 @@ def set_cycles_texture(image, material, extra_passes=False):
 
 		# check to see nodes and their respective pre-named field,
 		# saved as an attribute on the node
-		if node.parent and "MCPREP_frame" in node.parent:
-			if "MCPREP_diffuse" in node:
-				node.image = image
-				node.mute = False
-				node.hide = False
-			elif "MCPREP_normal" in node and node.type == 'TEX_IMAGE':
-				if "normal" in img_sets:
-					new_img = util.loadTexture(img_sets["normal"])
-					node.image = new_img
-					util.apply_colorspace(node, 'Non-Color')
-					node.mute = False
-					node.hide = False
-				else:
-					node.mute = True
-					node.hide = True
-
-					# remove the link between normal map and principled shader
-					# normal_map = node.outputs[0].links[0].to_node
-					# principled = ...
-
-			elif "MCPREP_specular" in node and node.type == 'TEX_IMAGE':
-				if "specular" in img_sets:
-					new_img = util.loadTexture(img_sets["specular"])
-					node.image = new_img
-					node.mute = False
-					node.hide = False
-					util.apply_colorspace(node, 'Non-Color')
-				else:
-					node.mute = True
-					node.hide = True
-
-			elif node.type == "TEX_IMAGE":
-				# assume all unlabeled texture nodes should be the diffuse pass
-				node["MCPREP_diffuse"] = True  # annotate node for future reference
-				node.image = image
+		if "MCPREP_diffuse" in node:
+			node.image = image
+			node.mute = False
+			node.hide = False
+		elif "MCPREP_normal" in node and node.type == 'TEX_IMAGE':
+			if "normal" in img_sets:
+				new_img = util.loadTexture(img_sets["normal"])
+				node.image = new_img
+				util.apply_colorspace(node, 'Non-Color')
 				node.mute = False
 				node.hide = False
 			else:
-				continue
+				node.mute = True
+				node.hide = True
+
+				# remove the link between normal map and principled shader
+				# normal_map = node.outputs[0].links[0].to_node
+				# principled = ...
+
+		elif "MCPREP_specular" in node and node.type == 'TEX_IMAGE':
+			if "specular" in img_sets:
+				new_img = util.loadTexture(img_sets["specular"])
+				node.image = new_img
+				node.mute = False
+				node.hide = False
+				util.apply_colorspace(node, 'Non-Color')
+			else:
+				node.mute = True
+				node.hide = True
+
+		elif node.type == "TEX_IMAGE":
+			# assume all unlabeled texture nodes should be the diffuse pass
+			node["MCPREP_diffuse"] = True  # annotate node for future reference
+			node.image = image
+			node.mute = False
+			node.hide = False
+		else:
+			continue
 
 		changed = True
 
@@ -1146,6 +1144,7 @@ def texgen_specular(mat, passes, nodeInputs, use_reflections):
 	util.apply_colorspace(nodeTexSpec, 'Non-Color')
 	util.apply_colorspace(nodeTexNorm, 'Non-Color')
 
+	# Graystyle Blending
 	if not checklist(canon, "desaturated"):
 		pass
 	elif not is_image_grayscale(image_diff):
@@ -1308,7 +1307,7 @@ def matgen_cycles_simple(
 							location = (0, 0), interpolation = 'Closest', image = image_diff)
 	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB", name = "Add Color", label = "Add Color", 
 							location = (300, 0), blend_type = 'MULTIPLY', mute = True, hide = True)
-	
+
 	principled = create_node(nodes, "ShaderNodeBsdfPrincipled", location = (600, 0))
 	node_out = create_node(nodes, "ShaderNodeOutputMaterial", location = (900, 0))
 
@@ -1956,7 +1955,7 @@ def matgen_special_glass(mat, passes):
 	return 0  # return 0 once implemented
 
 ### New Tex gen split ###
-def texgen(mat, passes, settings):
+def texgen(mat, passes, sett):
 	"""Create material image textures from passes"""
 	# Create the frame for organization
 	scn = bpy.context.scene
@@ -1973,8 +1972,14 @@ def texgen(mat, passes, settings):
 	nodeFrame.label = pack_name
 	nodeFrame["MCPREP_frame"] = True
 
-	x_loc = -680
-	y_loc = 140
+	settings = {
+		"location": (-680, 140)
+	}
+
+	for key, value in sett.items():
+		if key in settings.keys():
+			settings[key] = value
+	
 	tex_nodes = {
 		"diffuse": None,
 		"normal" : None,
@@ -1983,29 +1988,29 @@ def texgen(mat, passes, settings):
 	}
 	for i,(p,img) in enumerate(passes.items()):
 		name = p.capitalize() + " Texture"
-		tex = create_node(nodes, "ShaderNodeTexImage", name = name, label = name, parent = nodeFrame)
-		if img:
-			tex.image = img
-			tex.location = (x_loc, y_loc+ i * -300)
-			tex.mute = False
-		else:
-			tex.mute = True
-			tex.location = (x_loc, y_loc+ i * -290)
+		tex = create_node(
+			nodes, "ShaderNodeTexImage", name = name, label = name, parent = nodeFrame,
+			location = (settings["location"][0], settings["location"][1]+ i * -300),
+			image = img, mute = not bool(img)
+		)
+
 		if p != "diffuse":
 			util.apply_colorspace(tex, 'Non-Color')
 		if hasattr(p, "interpolation") and p != "normal":
 			tex.interpolation = 'Closest'
+		tex["MCPrep_"+ str(p)] = True
 		tex_nodes[p] = tex
 	
 	return tex_nodes 
 
 ### New mat gen unify
 
-def texprocess(mat, passes, nodeInputs, settings):
+def texprocess(mat, passes, settings):
 	"""Process the textures with nodes depend on the pack_format"""
 	matGen = util.nameGeneralize(mat.name)
 	canon, form = get_mc_canonical_name(matGen)
-	
+
+	image_diff = passes["diffuse"]
 	settings = {
 		"use_reflections":  True,
 		"use_emission": True,
@@ -2016,55 +2021,37 @@ def texprocess(mat, passes, nodeInputs, settings):
 	nodes = mat.node_tree.nodes
 	links = mat.node_tree.links
 
-	tex = texgen(mat, passes, settings)
-	nodeTexDiff = tex["diffuse"]
-	nodeTexNorm = tex["normal"]
-	nodeTexSpec = tex["specular"]
+	# Create nodes
+	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB")
+	nodeSpecInv = create_node(nodes, "ShaderNodeInvert",
+	name = "Smooth Inverse", label = "Smooth Inverse", location = (-80, -280))
+	nodeNormal = create_node(nodes, "ShaderNodeNormalMap", location = (-80, -500))
+	nodeNormalInv = create_node(nodes, "ShaderNodeRGBCurve",
+	name = "Normal Inverse", label = "Normal Inverse", location = (-380, -500))
+	if settings["pack_format"] == "seus":
+		nodeSeperate = create_node(nodes, "ShaderNodeSeparateRGB", name = "RGB Seperation", label = "RGB Seperation", location = (-280, -280))
 
-
-	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB") #Legacy MixRGB
-	
-	nodeSpecInv = create_node(nodes, "ShaderNodeInvert")
-	nodeNormal = create_node(nodes, "ShaderNodeNormalMap")
-	nodeNormalInv = create_node(nodes, "ShaderNodeRGBCurve")
-	nodeSeperate = create_node(nodes, "ShaderNodeSeparateRGB")
-
-	# Get MixRGB sockets
 	saturateMixIn =  get_node_socket(nodeSaturateMix) 
 	saturateMixOut = get_node_socket(nodeSaturateMix,is_input=False)
 
-	links.new(nodeTexDiff.outputs["Color"], nodeSaturateMix.inputs[saturateMixIn[1]])
-	links.new(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
-	links.new(nodeTexSpec.outputs["Color"], nodeSeperate.inputs["Image"])
-
+	# Input sockets and links
+	diffuseInput = nodeSaturateMix.inputs[saturateMixIn[1]]
+	normalInput = nodeNormalInv.inputs["Color"]
+	if settings["pack_format"] == "seus":
+		specularInput = nodeSeperate.inputs["Image"]
+		links.new(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
+	else:
+		specularInput = nodeSpecInv.inputs["Color"]
 	links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
-	links.new(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
 
-	for i in nodeInputs[0]:
-		links.new(nodeSaturateMix.outputs[saturateMixOut[0]], i)
-	for i in nodeInputs[1]:
-		links.new(nodeTexDiff.outputs["Alpha"], i)
-	if nodeTexSpec.image and settings["use_reflections"]:
-		for i in nodeInputs[3]:
-			links.new(nodeSpecInv.outputs["Color"], i)
-		for i in nodeInputs[5]:
-			links.new(nodeTexSpec.outputs["Color"], i)
-	for i in nodeInputs[6]:
-		links.new(nodeNormal.outputs["Normal"], i)
-	
-def camera_emission(mat):
-	"""Create camera emission setup"""
-	nodes = mat.node_tree.nodes
-	links = mat.node_tree.links
-
-	# Create nodes
+	## Create nodes Camera Light
 	nodeLightPath = create_node(nodes, "ShaderNodeLightPath", location = (-320, 520))
 	nodeFalloff = create_node(nodes, "ShaderNodeLightFalloff", location = (-80, 320))
-	nodeLightValue = create_node(nodes, "ShaderNodeValue")
+	nodeLightValue = create_node(nodes, "ShaderNodeValue",name = "Camera Light", label = "Camera Light")
 	nodeMixCam= create_node(nodes, "ShaderNodeMixRGB", location = (-320, 520), operation = "MIX", name = "Mix Camera Light")
 	nodeMixEmit = create_node(nodes, "ShaderNodeMixRGB", location = (-320, 520), operation = "MULTIPLY", name = "Mix Camera Light")
 
-	# Initialize default value  & sockets
+	# Initialize default value  & sockets Camera Light 
 	mixCamIn = get_node_socket(nodeMixCam)
 	mixCamOut = get_node_socket(nodeMixCam, is_input=False)
 	mixEmitIn = get_node_socket(nodeMixEmit)
@@ -2073,17 +2060,60 @@ def camera_emission(mat):
 	nodeLightValue.outputs['Value'].default_value = 4.0
 	nodeMixEmit.inputs[mixEmitIn[0]].default_value = 1.0
 
-	#Create links
+	# Create links Camera Light 
 	links.new(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs[mixCamIn[0]])
 	links.new(nodeFalloff.outputs["Linear"], nodeMixCam.inputs[mixCamIn[1]])
 	links.new(nodeLightValue.outputs["Value"], nodeMixCam.inputs[mixCamIn[2]])
-
 	links.new(nodeMixCam.outputs[mixCamOut[0]], nodeMixEmit.inputs[mixEmitIn[1]])
+	
+	# return nodeMixEmit.inputs[mixEmitIn[2]],nodeMixEmit.outputs[mixEmitOut[0]]
 
-	return nodeMixEmit.inputs[mixEmitIn[2]],nodeMixEmit.outputs[mixEmitOut[0]]
+	# Graystyle Blending
+	if not checklist(canon, "desaturated"):
+		pass
+	elif not is_image_grayscale(image_diff):
+		pass
+	else:
+		conf.log("Texture desaturated: " + canon, vv_only=True)
+		desat_color = conf.json_data['blocks']['desaturated'][canon]
+		if len(desat_color) < len(nodeSaturateMix.inputs[saturateMixIn[2]].default_value):
+			desat_color.append(1.0)
+		nodeSaturateMix.inputs[saturateMixIn[2]].default_value = desat_color
+		nodeSaturateMix.mute = False
+		nodeSaturateMix.hide = False
+
+
+	# Output sockets
+	diffuseOutput = nodeSaturateMix.outputs[saturateMixOut[0]]
+	specularOutput = nodeSpecInv.outputs["Color"]
+	normalOutput = nodeNormal.outputs["Normal"]
+	emissionOutput = nodeMixEmit.outputs[mixEmitOut[0]]
+	if settings["pack_format"] == "seus":
+		links.new(nodeSeperate.outputs["B"], nodeMixEmit.inputs[mixEmitIn[2]])
+		metalicOuput = nodeSeperate.outputs["G"]
+	else:
+		metalicOuput = 0.0
+
+	inputs= {
+		"diffuse": diffuseInput,
+		"specular": specularInput,
+		"normal": normalInput,
+		"metalic": None,
+		"emission": None,
+		"alpha": None
+	}
+	outputs ={
+		"diffuse": diffuseOutput,
+		"specular": specularOutput,
+		"normal": normalOutput,
+		"metalic": metalicOuput,
+		"emission": emissionOutput,
+		"alpha": None,
+	}
+	
+	return inputs,outputs
 
 def matgen(mat,passes,**agr):
-	matGen = util.nameGeneralize(mat.name)
 	nodes = mat.node_tree.nodes
 	links = mat.node_tree.links
 	nodes.clear() #? - I still don't know how the first texture works
@@ -2118,9 +2148,9 @@ def matgen(mat,passes,**agr):
 			# so instea, check against firs frame of sequence to verify load
 			return
 
+	# Use a custom or link a node group prest if not exist from the resource folder materials.blend
+	# For a non principle way is has a " Diffuse" suffix 
 	if settings["use_nodegroup"] or settings["pack_format"] == "custom":
-		# Use a custom or link a node group prest if not exist from the resource folder materials.blend
-		# For a non principle way is has a " Diffuse" suffix 
 		if settings["pack_format"] != "custom": 
 			node_tree = "MCPrep_" + str(settings["pack_format"]).capitalize()
 			node_tree = node_tree if settings["use_principled"] else node_tree + " Diffuse"
@@ -2149,40 +2179,51 @@ def matgen(mat,passes,**agr):
 				else:
 					links.new(tex_nodes["diffuse"].outputs[0], nodeInputs["diffuse"])
 
-		
-		# links.new(tex_nodes["diffuse"].outputs[1], nodeInputs["alpha"])
-		# links.new(tex_nodes["specular"].outputs[0], nodeInputs["specular"])
-		# links.new(tex_nodes["normal"].outputs[0], nodeInputs["normal"])
 		shaderOut = node_group.outputs[0]
+	# Use newer principle BSDF  
 	else:
 		principled = create_node(nodes, "ShaderNodeBsdfPrincipled", location = (120, 0))
-		nodeInputs = [
-		[
+		processIn,processOut = texprocess(mat, passes, settings)
+
+		shaderIn = {	
+			"diffuse": [
 			principled.inputs["Base Color"], # Base Color
 			principled.inputs["Emission"]
-		], 
-		[principled.inputs["Alpha"]],
-		[principled.inputs["Emission Strength"]],
-		[principled.inputs["Roughness"]],
-		[principled.inputs["Metallic"]],
-		[principled.inputs["Specular"]],
-		[principled.inputs["Normal"]]]
-		
+			],
+			"alpha": [principled.inputs["Alpha"]],
+			"emission": [principled.inputs["Emission Strength"]],
+			"roughness": [principled.inputs["Roughness"]],
+			"metalic": [principled.inputs["Metallic"]],
+			"specular": [principled.inputs["Specular"]],
+			"normal": [principled.inputs["Normal"]]
+		}
+
+		texOut = {
+			"diffuse": tex_nodes["diffuse"].ouputs["Color"],
+			"normal": tex_nodes["normal"].ouputs["Color"],
+			"specular": tex_nodes["specular"].ouputs["Color"],
+			"alpha": tex_nodes["diffuse"].ouputs["Alpha"]
+		}
+
 		if settings["pack_format"] != "simple":
-			texprocess(mat, passes, nodeInputs, settings)
+			# Links texture passes to texture process
+			for key,value in texOut.items():
+				if key in processIn.keys():
+					if key == "alpha":
+						processOut["alpha"] = texOut["alpha"]
+					else:
+						for i in value:
+							links.new(i, processIn[key])
+
+			# Links texture process to shader
+			for key,value in shaderIn.items():
+				if key in processOut.keys():
+					for i in value:
+						links.new(processOut[key], i)
+
 		shaderOut = principled.outputs[0]
 	
 	nodeOut = create_node(nodes, 'ShaderNodeOutputMaterial', location = (820, 0),
 	name = "MCprep Material Output", label = "MCprep Material Output", width =  160)
 
 	links.new(shaderOut, nodeOut.inputs[0])
-	
-
-
-# def matgen_nodegroup(mat,passes, settings):
-# 	matGen = util.nameGeneralize(mat.name)
-# 	nodes = mat.node_tree.nodes
-
-	
-
-# 	pass
