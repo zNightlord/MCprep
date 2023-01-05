@@ -1864,6 +1864,7 @@ class McprepProps(bpy.types.PropertyGroup):
 	entity_list_index = bpy.props.IntProperty(default=0)
 	model_list = bpy.props.CollectionProperty(type=spawn_util.ListModelAssets)
 	model_list_index = bpy.props.IntProperty(default=0)
+	material_node_group = bpy.props.PointerProperty(type=bpy.types.NodeTree)
 
 	# Effects are uniqune in that they are loaded into a list structure,
 	# but the UI list itself is not directly displayed. Rather, dropdowns
