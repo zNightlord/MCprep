@@ -263,7 +263,10 @@ class MCPREP_OT_meshswap_spawner(bpy.types.Operator):
 			# if blender 2.8, see if collection part of the MCprepLib coll.
 			use_cache = True
 		else:
-			util.bAppendLink(os.path.join(meshSwapPath, method), block, link)
+			try: # spawn inside meshswap file resulting runtime exception 
+				util.bAppendLink(os.path.join(meshSwapPath, method), block, link)
+			except RuntimeError:
+				self.report({"ERROR"}, "Could not spawn here")
 
 		if is_object:
 			# Object-level disabled! Must have better
