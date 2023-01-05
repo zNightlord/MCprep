@@ -357,7 +357,7 @@ def matprep_internal(mat, passes, use_reflections, only_solid):
 
 
 def matprep_cycles(
-	mat, passes, use_reflections, use_principled, only_solid, pack_format):
+	mat, passes, use_reflections, use_principled, only_solid, pack_format, use_nodegroup):
 	"""Determine how to prep or generate the cycles materials.
 
 	Args:
@@ -367,7 +367,7 @@ def matprep_cycles(
 		use_principled: if available and cycles, use principled node
 		saturate: if a desaturated texture (by canonical resource), add color
 		pack_format: which format of PBR, string ("Simple", Specular", "SEUS")
-
+		use_nodegroup: use new node_group (Still in experimental)
 	Returns:
 		int: 0 only if successful, otherwise None or other
 	"""
@@ -384,15 +384,21 @@ def matprep_cycles(
 	# 	res = matgen_special_water(mat, passes)
 	# if use_reflections and checklist(canon, "glass"):
 	# 	res = matgen_special_glass(mat, passes)
-	if pack_format == "simple" and util.bv28():
-		res = matgen_cycles_simple(
-			mat, passes, use_reflections, use_emission, only_solid, use_principled)
-	elif use_principled and hasattr(bpy.types, 'ShaderNodeBsdfPrincipled'):
-		res = matgen_cycles_principled(
-			mat, passes, use_reflections, use_emission, only_solid, pack_format)
+	if not util.exp():
+		if pack_format == "simple" and util.bv28():
+			res = matgen_cycles_simple(
+				mat, passes, use_reflections, use_emission, only_solid, use_principled)
+		elif use_principled and hasattr(bpy.types, 'ShaderNodeBsdfPrincipled'):
+			res = matgen_cycles_principled(
+				mat, passes, use_reflections, use_emission, only_solid, pack_format)
+		else:
+			res = matgen_cycles_original(
+				mat, passes, use_reflections, use_emission, only_solid, pack_format)
 	else:
-		res = matgen_cycles_original(
-			mat, passes, use_reflections, use_emission, only_solid, pack_format)
+		res = matgen(mat, passes,
+		use_reflections = use_reflections, use_emission = use_emission, only_solid = only_solid, 
+		pack_format = pack_format, 
+		use_nodegroup = use_nodegroup)
 	return res
 
 
@@ -1083,11 +1089,11 @@ def texgen_specular(mat, passes, nodeInputs, use_reflections):
 
 	# Creates the necessary nodes
 	nodeTexDiff = create_node(nodes, "ShaderNodeTexImage", name = "Diffuse Texture", label = "Diffuse Texture", 
-							location = (-380, 140),interpolation = 'Closest')
+							location = (-380, 140),interpolation = 'Closest', image = image_diff)
 	nodeTexNorm = create_node(nodes, "ShaderNodeTexImage", name = "Normal Texture", label = "Normal Texture", 
-							location = (-680, -500), interpolation = 'Closest')
+							location = (-680, -500), image = image_norm)
 	nodeTexSpec = create_node(nodes, "ShaderNodeTexImage", name = "Specular Texture", label = "Specular Texture", 
-							location = (-380, -180), interpolation = 'Closest')
+							location = (-380, -180), interpolation = 'Closest', image = image_spec)
 	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB", name = "Add Color", label = "Add Color", 
 							location = (-80, 140), blend_type = 'MULTIPLY',  mute = True, hide = True)
 
@@ -1161,7 +1167,6 @@ def texgen_specular(mat, passes, nodeInputs, use_reflections):
 	nodeNormal["MCPREP_normal"] = True
 	nodeSaturateMix["SATURATE"] = True
 	# nodeTexDisp["MCPREP_disp"] = True
-	nodeTexDiff.image = image_diff
 
 
 def texgen_seus(mat, passes, nodeInputs, use_reflections):
@@ -1180,7 +1185,7 @@ def texgen_seus(mat, passes, nodeInputs, use_reflections):
 
 	# Creates the necessary nodes
 	nodeTexDiff = create_node(nodes, "ShaderNodeTexImage", name = "Diffuse Texture",  label = "Diffuse Texture", 
-							location = (-380, 140), interpolation = 'Closest')
+							location = (-380, 140), interpolation = 'Closest', image = image_diff)
 	nodeTexNorm = create_node(nodes, "ShaderNodeTexImage", name = "Normal Texture", label = "Normal Texture", 
 							location = (-680, -500))
 	nodeTexSpec = create_node(nodes, "ShaderNodeTexImage", name = "Specular Texture", label = "Specular Texture", 
@@ -1269,7 +1274,6 @@ def texgen_seus(mat, passes, nodeInputs, use_reflections):
 	nodeNormal["MCPREP_normal"] = True
 	nodeSaturateMix["SATURATE"] = True
 	# nodeTexDisp["MCPREP_disp"] = True
-	nodeTexDiff.image = image_diff
 
 
 def matgen_cycles_simple(
@@ -1950,3 +1954,235 @@ def matgen_special_glass(mat, passes):
 	# nodeTexDisp["MCPREP_disp"] = True
 
 	return 0  # return 0 once implemented
+
+### New Tex gen split ###
+def texgen(mat, passes, settings):
+	"""Create material image textures from passes"""
+	# Create the frame for organization
+	scn = bpy.context.scene
+	path = os.path.normpath(scn.mcprep_texturepack_path)
+	for d in path.split(os.sep):
+		if d == 'assets':
+			break
+		pack_name = d 
+	
+	nodes = mat.node_tree.nodes
+
+	nodeFrame = nodes.new("NodeFrame")
+	nodeFrame.name = pack_name
+	nodeFrame.label = pack_name
+	nodeFrame["MCPREP_frame"] = True
+
+	x_loc = -680
+	y_loc = 140
+	tex_nodes = {
+		"diffuse": None,
+		"normal" : None,
+		"specular": None,
+		"displace": None
+	}
+	for i,(p,img) in enumerate(passes.items()):
+		name = p.capitalize() + " Texture"
+		tex = create_node(nodes, "ShaderNodeTexImage", name = name, label = name, parent = nodeFrame)
+		if img:
+			tex.image = img
+			tex.location = (x_loc, y_loc+ i * -300)
+			tex.mute = False
+		else:
+			tex.mute = True
+			tex.location = (x_loc, y_loc+ i * -290)
+		if p != "diffuse":
+			util.apply_colorspace(tex, 'Non-Color')
+		if hasattr(p, "interpolation") and p != "normal":
+			tex.interpolation = 'Closest'
+		tex_nodes[p] = tex
+	
+	return tex_nodes 
+
+### New mat gen unify
+
+def texprocess(mat, passes, nodeInputs, settings):
+	"""Process the textures with nodes depend on the pack_format"""
+	matGen = util.nameGeneralize(mat.name)
+	canon, form = get_mc_canonical_name(matGen)
+	
+	settings = {
+		"use_reflections":  True,
+		"use_emission": True,
+		"only_solid": False,
+		"pack_format": "simple",
+	}
+
+	nodes = mat.node_tree.nodes
+	links = mat.node_tree.links
+
+	tex = texgen(mat, passes, settings)
+	nodeTexDiff = tex["diffuse"]
+	nodeTexNorm = tex["normal"]
+	nodeTexSpec = tex["specular"]
+
+
+	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB") #Legacy MixRGB
+	
+	nodeSpecInv = create_node(nodes, "ShaderNodeInvert")
+	nodeNormal = create_node(nodes, "ShaderNodeNormalMap")
+	nodeNormalInv = create_node(nodes, "ShaderNodeRGBCurve")
+	nodeSeperate = create_node(nodes, "ShaderNodeSeparateRGB")
+
+	# Get MixRGB sockets
+	saturateMixIn =  get_node_socket(nodeSaturateMix) 
+	saturateMixOut = get_node_socket(nodeSaturateMix,is_input=False)
+
+	links.new(nodeTexDiff.outputs["Color"], nodeSaturateMix.inputs[saturateMixIn[1]])
+	links.new(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
+	links.new(nodeTexSpec.outputs["Color"], nodeSeperate.inputs["Image"])
+
+	links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
+	links.new(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
+
+	for i in nodeInputs[0]:
+		links.new(nodeSaturateMix.outputs[saturateMixOut[0]], i)
+	for i in nodeInputs[1]:
+		links.new(nodeTexDiff.outputs["Alpha"], i)
+	if nodeTexSpec.image and settings["use_reflections"]:
+		for i in nodeInputs[3]:
+			links.new(nodeSpecInv.outputs["Color"], i)
+		for i in nodeInputs[5]:
+			links.new(nodeTexSpec.outputs["Color"], i)
+	for i in nodeInputs[6]:
+		links.new(nodeNormal.outputs["Normal"], i)
+	
+def camera_emission(mat):
+	"""Create camera emission setup"""
+	nodes = mat.node_tree.nodes
+	links = mat.node_tree.links
+
+	# Create nodes
+	nodeLightPath = create_node(nodes, "ShaderNodeLightPath", location = (-320, 520))
+	nodeFalloff = create_node(nodes, "ShaderNodeLightFalloff", location = (-80, 320))
+	nodeLightValue = create_node(nodes, "ShaderNodeValue")
+	nodeMixCam= create_node(nodes, "ShaderNodeMixRGB", location = (-320, 520), operation = "MIX", name = "Mix Camera Light")
+	nodeMixEmit = create_node(nodes, "ShaderNodeMixRGB", location = (-320, 520), operation = "MULTIPLY", name = "Mix Camera Light")
+
+	# Initialize default value  & sockets
+	mixCamIn = get_node_socket(nodeMixCam)
+	mixCamOut = get_node_socket(nodeMixCam, is_input=False)
+	mixEmitIn = get_node_socket(nodeMixEmit)
+	mixEmitOut = get_node_socket(nodeMixEmit, is_input=False)
+
+	nodeLightValue.outputs['Value'].default_value = 4.0
+	nodeMixEmit.inputs[mixEmitIn[0]].default_value = 1.0
+
+	#Create links
+	links.new(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs[mixCamIn[0]])
+	links.new(nodeFalloff.outputs["Linear"], nodeMixCam.inputs[mixCamIn[1]])
+	links.new(nodeLightValue.outputs["Value"], nodeMixCam.inputs[mixCamIn[2]])
+
+	links.new(nodeMixCam.outputs[mixCamOut[0]], nodeMixEmit.inputs[mixEmitIn[1]])
+
+	return nodeMixEmit.inputs[mixEmitIn[2]],nodeMixEmit.outputs[mixEmitOut[0]]
+
+def matgen(mat,passes,**agr):
+	matGen = util.nameGeneralize(mat.name)
+	nodes = mat.node_tree.nodes
+	links = mat.node_tree.links
+	nodes.clear() #? - I still don't know how the first texture works
+
+	# Default settings
+	settings = {
+		"use_reflections":  True,
+		"use_emission": True,
+		"only_solid": False,
+		"pack_format": "simple",
+		"use_principled": True,
+		"use_nodegroup": False
+	}
+	
+	for key, value in agr.items():
+		if key in settings.keys():
+			settings[key] = value
+	
+	tex_nodes = texgen(mat,passes,settings)
+
+	image_diff = tex_nodes["diffuse"].image
+	if not image_diff:
+		print("Could not find diffuse image, halting generation: " + mat.name)
+		return
+	elif image_diff.size[0] == 0 or image_diff.size[1] == 0:
+		if image_diff.source != 'SEQUENCE':
+			# Common non animated case; this means the image is missing and would
+			# have already checked for replacement textures by now, so skip
+			return
+		if not os.path.isfile(bpy.path.abspath(image_diff.filepath)):
+			# can't check size or pixels as it often is not immediately avaialble
+			# so instea, check against firs frame of sequence to verify load
+			return
+
+	if settings["use_nodegroup"] or settings["pack_format"] == "custom":
+		# Use a custom or link a node group prest if not exist from the resource folder materials.blend
+		# For a non principle way is has a " Diffuse" suffix 
+		if settings["pack_format"] != "custom": 
+			node_tree = "MCPrep_" + str(settings["pack_format"]).capitalize()
+			node_tree = node_tree if settings["use_principled"] else node_tree + " Diffuse"
+			name = node_tree
+			if not bpy.data.node_groups.get(node_tree):
+				blendfile = os.path.join(
+					os.path.dirname(__file__), "MCprep_resources", "materials.blend")
+				util.bAppendLink(os.path.join(blendfile, "NodeTree"), node_tree, True)
+		else:
+			node_tree, name = bpy.context.scene.mcprep_props.material_node_group, bpy.context.scene.mcprep_props.material_node_group.name
+	
+		node_group = create_node(nodes, 'ShaderNodeGroup', location = (-50,0), node_tree = node_tree, name = name, label = name)
+		nodeInputs = {
+			"diffuse": node_group.inputs.get('Diffuse'), 
+			"tint": node_group.inputs["Tint"], 
+			"alpha": node_group.inputs["Alpha"],
+			"emission": node_group.inputs.get('Emission'), # Optional Emission
+			"specular": node_group.inputs.get('Specular'),
+			"normal": node_group.inputs.get('Normal')
+		}
+		for input in node_group.inputs:
+			name = input.name.lower()
+			if name in tex_nodes:
+				if name == 'alpha':
+					links.new(tex_nodes["diffuse"].outputs[1], nodeInputs["diffuse"])
+				else:
+					links.new(tex_nodes["diffuse"].outputs[0], nodeInputs["diffuse"])
+
+		
+		# links.new(tex_nodes["diffuse"].outputs[1], nodeInputs["alpha"])
+		# links.new(tex_nodes["specular"].outputs[0], nodeInputs["specular"])
+		# links.new(tex_nodes["normal"].outputs[0], nodeInputs["normal"])
+		shaderOut = node_group.outputs[0]
+	else:
+		principled = create_node(nodes, "ShaderNodeBsdfPrincipled", location = (120, 0))
+		nodeInputs = [
+		[
+			principled.inputs["Base Color"], # Base Color
+			principled.inputs["Emission"]
+		], 
+		[principled.inputs["Alpha"]],
+		[principled.inputs["Emission Strength"]],
+		[principled.inputs["Roughness"]],
+		[principled.inputs["Metallic"]],
+		[principled.inputs["Specular"]],
+		[principled.inputs["Normal"]]]
+		
+		if settings["pack_format"] != "simple":
+			texprocess(mat, passes, nodeInputs, settings)
+		shaderOut = principled.outputs[0]
+	
+	nodeOut = create_node(nodes, 'ShaderNodeOutputMaterial', location = (820, 0),
+	name = "MCprep Material Output", label = "MCprep Material Output", width =  160)
+
+	links.new(shaderOut, nodeOut.inputs[0])
+	
+
+
+# def matgen_nodegroup(mat,passes, settings):
+# 	matGen = util.nameGeneralize(mat.name)
+# 	nodes = mat.node_tree.nodes
+
+	
+
+# 	pass
