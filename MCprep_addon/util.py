@@ -202,6 +202,10 @@ def bv30():
 	"""Check if we're dealing with Blender 3.0"""
 	return min_bv((3, 00))
 
+def exp():
+	"""Check if this is a experimental feature"""
+	addon_prefs = get_user_preferences()
+	return addon_prefs.feature_set == 'experimental'
 
 def face_on_edge(faceLoc):
 	"""Check if a face is on the boundary between two blocks (local coordinates)."""
