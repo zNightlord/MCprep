@@ -413,6 +413,7 @@ class McprepPreference(bpy.types.AddonPreferences):
 			('supported', 'Supported', 'Use only supported features'),
 			('experimental', 'Experimental', 'Enable experimental features')],
 		name="Feature set",
+		default='experimental',
 		update=feature_set_update)
 
 	# addon updater preferences
@@ -1043,7 +1044,8 @@ class MCPREP_PT_materials_nodes(MCPREP_PT_materials, bpy.types.Panel):
 			row.scale_y = 1.5
 			mat = scn_props.material_list[scn_props.material_list_index]
 			ops = row.operator("mcprep.load_texture", text="Load texture")
-			ops.filepath = mat.path
+			# ops.filepath = mat.path
+			ops.location = (0,0)
 		else:
 			col.enabled = False
 			row = col.row(align=True)
@@ -1864,7 +1866,9 @@ class McprepProps(bpy.types.PropertyGroup):
 	entity_list_index = bpy.props.IntProperty(default=0)
 	model_list = bpy.props.CollectionProperty(type=spawn_util.ListModelAssets)
 	model_list_index = bpy.props.IntProperty(default=0)
-	material_node_group = bpy.props.PointerProperty(type=bpy.types.NodeTree)
+
+	material_node_group = bpy.props.PointerProperty(type=bpy.types.NodeTree, description="Optional shader node group to use when pack format is using custom")
+	process_script = bpy.props.PointerProperty(type=bpy.types.Text, description="Post process script to run after the prep material generation.")
 
 	# Effects are uniqune in that they are loaded into a list structure,
 	# but the UI list itself is not directly displayed. Rather, dropdowns
