@@ -1984,7 +1984,7 @@ def texgen(mat, passes, sett):
 		"diffuse": None,
 		"normal" : None,
 		"specular": None,
-		"displace": None
+		#"displace": None
 	}
 	for i,(p,img) in enumerate(passes.items()):
 		name = p.capitalize() + " Texture"
@@ -2002,6 +2002,27 @@ def texgen(mat, passes, sett):
 		tex_nodes[p] = tex
 	
 	return tex_nodes 
+
+def texspawn(mat, passes, sett):
+	nodes = mat.node_tree.nodes
+	links = mat.node_tree.links
+	tex_nodes = texgen(mat, passes, sett)
+	
+	name = "PBR Mixer"
+	if not bpy.data.node_groups.get(name):
+		blendfile = os.path.join(
+			os.path.dirname(__file__), "MCprep_resources", "mcprep_nodes.blend")
+		util.bAppendLink(os.path.join(blendfile, "NodeTree"), name, True)
+
+	
+	node_group = create_node(nodes, 'ShaderNodeGroup', location = (-50,0), node_tree = name,
+						name = name, label = name)
+	for n in tex_nodes:
+		for inp in node_group.inputs:
+			if n == "diffuse" and inp.name == "Alpha":
+				links.new(n.outputs["Alpha"], node_group.inputs["Alpha"])
+			elif n == inp.name:
+				links.new(n.outputs["Color"], node_group.inputs[n.capitalize()])
 
 ### New mat gen unify
 
@@ -2022,15 +2043,21 @@ def texprocess(mat, passes, settings):
 	links = mat.node_tree.links
 
 	# Create nodes
-	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB")
-	nodeSpecInv = create_node(nodes, "ShaderNodeInvert",
-	name = "Smooth Inverse", label = "Smooth Inverse", location = (-80, -280))
-	nodeNormal = create_node(nodes, "ShaderNodeNormalMap", location = (-80, -500))
-	nodeNormalInv = create_node(nodes, "ShaderNodeRGBCurve",
-	name = "Normal Inverse", label = "Normal Inverse", location = (-380, -500))
+	nodeSaturateMix = create_node(nodes, "ShaderNodeMixRGB", location = (-380, 140),
+								operation = "MULTIPLY",
+								name = "Add Color", label = "Add Color")
+	nodeSpecInv = create_node(nodes, "ShaderNodeInvert", location = (-80, -160),
+								name = "Smooth Inverse", label = "Smooth Inverse")
+	nodeNormal = create_node(nodes, "ShaderNodeNormalMap", location = (-80, -470))
+	nodeNormalInv = create_node(nodes, "ShaderNodeRGBCurve", location = (-380, -470),
+								name = "Normal Inverse", label = "Normal Inverse")
+	
 	if settings["pack_format"] == "seus":
-		nodeSeperate = create_node(nodes, "ShaderNodeSeparateRGB", name = "RGB Seperation", label = "RGB Seperation", location = (-280, -280))
-
+		nodeSeperate = create_node(nodes, "ShaderNodeSeparateRGB", 
+			name = "RGB Seperation", label = "RGB Seperation", location = (-280, -280))
+	else:
+		nodeMetalicValue = create_node(nodes, "ShaderNodeValue", location = (0, 0) ,
+								name = "Metallic", label = "Metallic")
 	saturateMixIn =  get_node_socket(nodeSaturateMix) 
 	saturateMixOut = get_node_socket(nodeSaturateMix,is_input=False)
 
@@ -2042,14 +2069,25 @@ def texprocess(mat, passes, settings):
 		links.new(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
 	else:
 		specularInput = nodeSpecInv.inputs["Color"]
+		nodeMetalicValue.outputs['Value'].default_value = 4.0
+
 	links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
 
 	## Create nodes Camera Light
-	nodeLightPath = create_node(nodes, "ShaderNodeLightPath", location = (-320, 520))
-	nodeFalloff = create_node(nodes, "ShaderNodeLightFalloff", location = (-80, 320))
-	nodeLightValue = create_node(nodes, "ShaderNodeValue",name = "Camera Light", label = "Camera Light")
-	nodeMixCam= create_node(nodes, "ShaderNodeMixRGB", location = (-320, 520), operation = "MIX", name = "Mix Camera Light")
-	nodeMixEmit = create_node(nodes, "ShaderNodeMixRGB", location = (-320, 520), operation = "MULTIPLY", name = "Mix Camera Light")
+	from mathutils import Vector
+	cameraLocation = Vector((0,0))
+	nodeLightPath = create_node(nodes, "ShaderNodeLightPath", location = Vector((-320.0, 520.0)) + cameraLocation,
+								name = "Camera Light Path", label = "Camera Light Path")
+	nodeFalloff = create_node(nodes, "ShaderNodeLightFalloff", location = Vector((-140, 335)) + cameraLocation,
+								name = "Camera Light Falloff", label = "Camera Light Falloff")
+	nodeLightValue = create_node(nodes, "ShaderNodeValue", location = Vector((-320, 185)) + cameraLocation,
+								name = "Camera Light", label = "Camera Light")
+	nodeMixCam= create_node(nodes, "ShaderNodeMixRGB", location = Vector((-140, 520)) + cameraLocation,
+								operation = "MIX",
+								name = "Mix Camera Light", label = "Mix Camera Light")
+	nodeMixEmit = create_node(nodes, "ShaderNodeMixRGB", location = Vector((25, 520)) + cameraLocation,
+								operation = "MULTIPLY",
+								name = "Combine Camera Light", label = "Combine Camera Light")
 
 	# Initialize default value  & sockets Camera Light 
 	mixCamIn = get_node_socket(nodeMixCam)
@@ -2157,12 +2195,13 @@ def matgen(mat,passes,**agr):
 			name = node_tree
 			if not bpy.data.node_groups.get(node_tree):
 				blendfile = os.path.join(
-					os.path.dirname(__file__), "MCprep_resources", "materials.blend")
+					os.path.dirname(__file__), "MCprep_resources", "mcprep_nodes.blend")
 				util.bAppendLink(os.path.join(blendfile, "NodeTree"), node_tree, True)
 		else:
 			node_tree, name = bpy.context.scene.mcprep_props.material_node_group, bpy.context.scene.mcprep_props.material_node_group.name
 	
-		node_group = create_node(nodes, 'ShaderNodeGroup', location = (-50,0), node_tree = node_tree, name = name, label = name)
+		node_group = create_node(nodes, 'ShaderNodeGroup', location = (-50,0), node_tree = node_tree,
+								name = name, label = name)
 		nodeInputs = {
 			"diffuse": node_group.inputs.get('Diffuse'), 
 			"tint": node_group.inputs["Tint"], 
@@ -2182,7 +2221,8 @@ def matgen(mat,passes,**agr):
 		shaderOut = node_group.outputs[0]
 	# Use newer principle BSDF  
 	else:
-		principled = create_node(nodes, "ShaderNodeBsdfPrincipled", location = (120, 0))
+		principled = create_node(nodes, "ShaderNodeBsdfPrincipled", location = (520, 0),
+								name = "MCprep Principle Shader", label = "MCprep Principle Shader")
 		processIn,processOut = texprocess(mat, passes, settings)
 
 		shaderIn = {	
@@ -2199,10 +2239,10 @@ def matgen(mat,passes,**agr):
 		}
 
 		texOut = {
-			"diffuse": tex_nodes["diffuse"].ouputs["Color"],
-			"normal": tex_nodes["normal"].ouputs["Color"],
-			"specular": tex_nodes["specular"].ouputs["Color"],
-			"alpha": tex_nodes["diffuse"].ouputs["Alpha"]
+			"diffuse": tex_nodes["diffuse"].outputs["Color"],
+			"normal": tex_nodes["normal"].outputs["Color"],
+			"specular": tex_nodes["specular"].outputs["Color"],
+			"alpha": tex_nodes["diffuse"].outputs["Alpha"]
 		}
 
 		if settings["pack_format"] != "simple":
@@ -2212,8 +2252,7 @@ def matgen(mat,passes,**agr):
 					if key == "alpha":
 						processOut["alpha"] = texOut["alpha"]
 					else:
-						for i in value:
-							links.new(i, processIn[key])
+						links.new(value, processIn[key])
 
 			# Links texture process to shader
 			for key,value in shaderIn.items():
