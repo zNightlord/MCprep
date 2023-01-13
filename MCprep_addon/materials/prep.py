@@ -121,11 +121,6 @@ class McprepMaterialProps():
 		description="Change the pack format when using a PBR resource pack.",
 		items=pack_formats
 	)
-	packFormat = bpy.props.EnumProperty(
-		name="Pack Format",
-		description="Change the pack format when using a PBR resource pack.",
-		items=pack_formats
-	)
 	advancedSettings = bpy.props.BoolProperty(
 		name="Advanced",
 		description="Show Advanced Settings",
