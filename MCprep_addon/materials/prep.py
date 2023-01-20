@@ -310,7 +310,7 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 					mat, context.scene.render.engine)
 
 		if util.exp() and bool(post):
-			post.execute(mat,passes)
+			post.execute(context, mat, passes)
 			
 
 		# Sync materials.
