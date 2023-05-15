@@ -52,12 +52,14 @@ class MCprepEnv:
 			self.dev_build = True
 			self.verbose = True
 			self.very_verbose = True
+			self.post_script_limit = False
 			self.log("Dev Build!")
 
 		else:
 			self.dev_build = False
 			self.verbose = False
 			self.very_verbose = False
+			self.post_script_limit = True
 
 		# lazy load json, ie only load it when needed (util function defined)
 

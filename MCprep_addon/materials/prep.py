@@ -33,7 +33,26 @@ from ..conf import env
 # -----------------------------------------------------------------------------
 # Material class functions
 # -----------------------------------------------------------------------------
-
+def post_script_limiter(post):
+  """A basic way to check if post script has any "banned" words for users
+  
+  Returns True if need to limit"""
+  context = bpy.context
+  scn_props = context.scene.mcprep_props
+  post_text = post.as_string()
+  limit_string = (
+    "import os",
+    "from os",
+    "import pathlib",
+    "from pathlib"
+  )
+  if not env.post_script_limit:
+    for s in limit_string:
+      if s in post_text:
+        break
+    return True
+  
+  return False # No Post script limit
 
 class McprepMaterialProps():
 	"""Class to inheret reused MCprep settings.
@@ -51,6 +70,8 @@ class McprepMaterialProps():
 				"Use a simple shader setup with no PBR or emission falloff."))
 		itms.append(("specular", "Specular", "Sets the pack format to Specular."))
 		itms.append(("seus", "SEUS", "Sets the pack format to SEUS."))
+		if util.exp():
+				itms.append(("custom", "Custom (Experimental)", "Use pre-defined custom node group. This will turn on using custom node group"))
 		return itms
 	
 	animateTextures: bpy.props.BoolProperty(
@@ -125,6 +146,36 @@ class McprepMaterialProps():
 		description="Make emmisive materials emit light",
 		default=True
 	)
+	
+	advancedSettings = bpy.props.BoolProperty(
+			name="Advanced",
+			description="Show Advanced Settings",
+			default=False)
+	
+	blendMode = bpy.props.EnumProperty(
+			items=[
+				('HASHED', 'Alpha Hashed', 'Use noise to dither the visibility'),
+				('CLIP', 'Alpha Clip', 'Use the alpha threshold to clip the visibility'),
+				('BLEND', 'Alpha Blend', 'Render the polygon transparent, depend on that alpha channel')
+				],
+			name="Blend Mode"
+		)
+	
+	shadowMode = bpy.props.EnumProperty(
+			items=[
+				('HASHED', 'Alpha Hashed', 'Use noise to dither the visibility'),
+				('CLIP', 'Alpha Clip', 'Use the alpha threshold to clip the visibility'),
+				('BLEND', 'Alpha Blend', 'Render the polygon transparent, depend on that alpha channel')
+				],
+			name="Shadow Mode"
+	)
+
+	useNodegroup = bpy.props.BoolProperty(
+			name="Use node group (Experimental)",
+			description="Use node group asset in the node tree",
+			default=False
+	)
+	
 
 
 def draw_mats_common(self, context):
@@ -133,7 +184,8 @@ def draw_mats_common(self, context):
 	engine = context.scene.render.engine
 	if engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
 		col.prop(self, "packFormat")
-		col.prop(self, "usePrincipledShader")
+		if self.packFormat == "custom":
+			col.prop(self, "usePrincipledShader")
 	col.prop(self, "useReflections")
 	col.prop(self, "makeSolid")
 
@@ -163,6 +215,28 @@ def draw_mats_common(self, context):
 	row = self.layout.row()
 	row.prop(self, "optimizeScene")
 	row.prop(self, "useEmission")
+	layout = self.layout
+	if util.exp():
+		scn_props = context.scene.mcprep_props
+		col = layout.column()
+		if not self.advancedSettings:
+			col.prop(self, "advancedSettings", toggle=True, icon="TRIA_RIGHT")
+		else:
+			col.prop(self, "advancedSettings", toggle=True, icon="TRIA_DOWN")
+			col = layout.column(align= True)
+			col.prop(self, "blendMode")
+			col.prop(self, "shadowMode")
+			
+			row = layout.row()
+			if not self.packFormat == "custom":
+				row.prop(self, "useNodegroup") 
+			else:
+				col = layout.column()
+				col.prop_search(scn_props, "material_node_group", bpy.data, "node_groups", text= "", icon = 'NODETREE')
+	
+	if util.exp() or not engine in ['CYCLES', 'BLENDER_EEVEE']:
+		col = layout.column()
+		col.prop(scn_props, "process_script", text = "")
 
 
 class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
@@ -206,6 +280,8 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 		engine = context.scene.render.engine
 		count = 0
 		count_lib_skipped = 0
+		post = scn_props.process_script
+		limit = post_script_limiter(post)
 
 		for mat in mat_list:
 			if not mat:
@@ -244,17 +320,17 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 					res = generate.replace_missing_texture(passes[pass_name])
 					if res > 0:
 						mat["texture_swapped"] = True  # used to apply saturation
-
+			
+			options = generate.PrepOptions(
+				passes, 
+				self.useReflections, 
+				self.usePrincipledShader, 
+				self.makeSolid, 
+				self.packFormat, 
+				self.useEmission, 
+				False # This is for an option set in matprep_cycles
+			)
 			if engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
-				options = generate.PrepOptions(
-					passes, 
-					self.useReflections, 
-					self.usePrincipledShader, 
-					self.makeSolid, 
-					self.packFormat, 
-					self.useEmission, 
-					False # This is for an option set in matprep_cycles
-				)
 				res = generate.matprep_cycles(
 					mat=mat,
 					options=options
@@ -262,10 +338,23 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 				if res == 0:
 					count += 1
 			else:
-				self.report(
-					{'ERROR'},
-					"Only Cycles and Eevee are supported")
-				return {'CANCELLED'}
+				if not util.exp():
+					self.report(
+						{'ERROR'},
+						"Only Cycles and Eevee are supported"
+					)
+					return {'CANCELLED'}
+				elif util.exp() and post and not limit:
+					self.report(
+						{"INFO"},
+						"Experimental. Run post process script"
+					)
+				else:
+					self.report(
+						{'ERROR'},
+						"Post process denied. Please recheck your script or contact the developer"
+					)
+					return {'CANCELLED'}
 
 			if self.animateTextures:
 				sequences.animate_single_material(
@@ -303,6 +392,10 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 			self.report(
 				{"ERROR"},
 				"Nothing modified, be sure you selected objects with existing materials!")
+				
+		if util.exp() and bool(post):
+			post.as_module().execute(context, mat, options)
+				
 
 		addon_prefs = util.get_user_preferences(context)
 		self.track_param = context.scene.render.engine

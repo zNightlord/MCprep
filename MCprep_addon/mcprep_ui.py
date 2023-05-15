@@ -1056,12 +1056,13 @@ class MCPREP_PT_skins(bpy.types.Panel):
 					row.operator("mcprep.spawn_with_skin", text=tx)
 
 
-class MCPREP_PT_materials(bpy.types.Panel):
-	"""MCprep panel for materials"""
-	bl_label = "MCprep materials"
-	bl_space_type = "PROPERTIES"
-	bl_region_type = 'WINDOW'
+class MCPREP_PT_materials():
+	"""A based MCprep panel for materials"""
 	bl_context = "material"
+
+	def draw_individual(self, context):
+		# do nothing
+		pass
 
 	def draw(self, context):
 		"""Code for drawing the material generator"""
@@ -1102,10 +1103,44 @@ class MCPREP_PT_materials(bpy.types.Panel):
 			row = col.row(align=True)
 			row.scale_y = 1.5
 			ops = row.operator("mcprep.load_material", text="Load material")
+			self.draw_individual(context)
 
+class MCPREP_PT_materials_props(MCPREP_PT_materials, bpy.types.Panel):
+	bl_label = "MCprep materials"
+	bl_space_type = "PROPERTIES"
+	bl_region_type = 'WINDOW'
 
-class MCPREP_PT_materials_subsettings(bpy.types.Panel):
-	"""MCprep panel for advanced material settings and functions"""
+class MCPREP_PT_materials_nodes(MCPREP_PT_materials, bpy.types.Panel):
+	bl_label = "MCprep"
+	bl_space_type = "NODE_EDITOR"
+	bl_region_type = 'UI'
+	bl_category = "MCprep"
+
+	@classmethod
+	def poll(cls, context):
+		return context.space_data.tree_type == 'ShaderNodeTree'
+
+	def draw_individual(self, context):
+		"""Code for individual drawing the texture generator ui"""
+		scn_props = context.scene.mcprep_props
+
+		layout = self.layout
+		col = layout.column(align=True)
+		if scn_props.material_list:
+			row = col.row(align=True)
+			row.scale_y = 1.5
+			mat = scn_props.material_list[scn_props.material_list_index]
+			ops = row.operator("mcprep.load_texture", text="Load texture")
+			# ops.filepath = mat.path
+			ops.location = (0,0)
+		else:
+			col.enabled = False
+			row = col.row(align=True)
+			row.scale_y = 1.5
+			ops = row.operator("mcprep.load_texture", text="Load texture")
+
+class MCPREP_PT_materials_subsets():
+	"""A based MCprep panel for advanced material settings and functions"""
 	bl_label = "Advanced"
 	bl_parent_id = "MCPREP_PT_materials"
 	bl_space_type = "PROPERTIES"
@@ -1124,10 +1159,27 @@ class MCPREP_PT_materials_subsettings(bpy.types.Panel):
 		subrow.prop(context.scene, "mcprep_texturepack_path", text="")
 		subrow.operator(
 			"mcprep.reset_texture_path", icon=LOAD_FACTORY, text="")
-		b_row = self.layout.row()
-		b_col = b_row.column(align=True)
-		b_col.operator("mcprep.reload_materials")
+		b_row = self.layout.row(align=True)
+ 		b_col = b_row.column(align=True)
+ 		b_col.operator("mcprep.reload_materials")
+		b_row.operator(
+				"mcprep.open_preferences",
+				text="", icon="PREFERENCES").tab = "settings"
+ 
++class MCPREP_PT_materials_props_subsets(MCPREP_PT_materials_subsets, bpy.types.Panel):
+	bl_parent_id = "MCPREP_PT_materials_props"
+	bl_space_type = "PROPERTIES"
+	bl_region_type = 'WINDOW'
 
++class MCPREP_PT_materials_nodes_subsets(MCPREP_PT_materials_subsets, bpy.types.Panel):
+	bl_parent_id = "MCPREP_PT_materials_nodes"
+	bl_space_type = "NODE_EDITOR"
+	bl_region_type = 'UI'
+	
+	@classmethod
+	def poll(cls, context):
+		return context.space_data.tree_type == 'ShaderNodeTree'
+	
 
 # -----------------------------------------------------------------------------
 # Spawner related UI
@@ -1910,7 +1962,8 @@ def mcprep_image_tools(self, context):
 # -----------------------------------------------
 # Addon wide properties (aside from user preferences)
 # -----------------------------------------------
-
+def is_valid_nodegroup(self, object):
+    return object.type == 'SHADER'
 
 class McprepProps(bpy.types.PropertyGroup):
 	"""Properties saved to an individual scene"""
@@ -1981,6 +2034,19 @@ class McprepProps(bpy.types.PropertyGroup):
 	# will iterate over this to populate based on type.
 	effects_list: bpy.props.CollectionProperty(type=spawn_util.ListEffectsAssets)
 	effects_list_index: bpy.props.IntProperty(default=0)
+  
+  material_node_group: bpy.props.PointerProperty(
+    type=bpy.types.NodeTree, 
+    name="Material Nodegroup",
+    description="Optional shader node group to use when pack format is using custom", 
+    poll=is_valid_nodegroup
+  )
+	process_script: bpy.props.PointerProperty(
+    type=bpy.types.Text, 
+    name="Postprocess script",
+    description="Post process script to run after the prep material generation."
+  )
+	
 
 
 # -----------------------------------------------------------------------------
@@ -2009,8 +2075,10 @@ classes = (
 	MCPREP_PT_effects_spawner,
 	MCPREP_PT_entity_spawner,
 	MCPREP_PT_meshswap_spawner,
-	MCPREP_PT_materials,
-	MCPREP_PT_materials_subsettings,
+	MCPREP_PT_materials_props,
+	MCPREP_PT_materials_nodes,
+	MCPREP_PT_materials_props_subsets,
+	MCPREP_PT_materials_nodes_subsets
 )
 
 

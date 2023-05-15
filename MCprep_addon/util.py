@@ -221,6 +221,10 @@ def bv30():
 	"""Check if we're dealing with Blender 3.0"""
 	return min_bv((3, 00))
 
+def exp():
+	"""Check preferences is in experimental flag"""
+	addon_prefs = get_user_preferences()
+	return addon_prefs.feature_set == 'experimental'
 
 def is_atlas_export(context):
 	"""Check if the selected objects are textureswap/animate tex compatible.
