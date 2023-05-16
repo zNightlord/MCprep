@@ -752,6 +752,100 @@ class MCPREP_OT_load_material(bpy.types.Operator, McprepMaterialProps):
 
 		return success, None
 
+class MCPREP_OT_load_texture(bpy.types.Operator):
+	"""Load the select texture from the active resource pack to active material"""
+	bl_idname = "mcprep.load_texture"
+	bl_label = "Generate texture"
+	bl_description = (
+		"Generate and add image texture nodes based on active resource pack")
+	bl_options = {'REGISTER', 'UNDO'}
+
+	# filepath = bpy.props.StringProperty(default="")
+	location = bpy.props.FloatVectorProperty(default=(0.8, 0.8), size=2)
+	skipUsage = bpy.props.BoolProperty(default=False, options={'HIDDEN'})
+	useExtraMaps = True
+
+	@classmethod
+	def poll(cls, context):
+		return len(context.object.data.materials)
+
+	def invoke(self, context, event):
+		region = context.region.view2d
+		ui_scale = util.ui_scale() 
+		x, y = region.region_to_view(event.mouse_region_x, event.mouse_region_y)
+		self.x,self.y = x /ui_scale,y/ui_scale
+		return self.execute(context)
+
+	# def draw(self, context):
+	# 	draw_mats_common(self, context)
+
+	track_function = "generate_tex"
+	track_param = None
+	@tracking.report_error
+	def execute(self, context):
+		scn_props = context.scene.mcprep_props
+		mat = scn_props.material_list[scn_props.material_list_index]
+		filepath = mat.path
+		if not os.path.isfile(filepath):
+			self.report({"ERROR"}, (
+				"File not found! Reset the resource pack under advanced "
+				"settings (return arrow icon) and press reload materials"))
+			return {'CANCELLED'}
+
+		bpy.ops.node.select_all(action='DESELECT')
+		mat = context.object.active_material
+		res, err = self.add_texture(context, mat, filepath)
+		
+		if res is False and err:
+			self.report({"ERROR"}, err)
+			return {'CANCELLED'}
+		elif res is False:
+			self.report({"ERROR"}, "Failed to add textures")
+			return {'CANCELLED'}
+
+		self.track_param = context.scene.render.engine
+		return {'FINISHED'}
+
+	def add_texture(self, context, mat, path):
+		"""Add the texture based on path in material list"""
+		engine = context.scene.render.engine
+		passes = generate.get_textures(mat)
+		
+		# if not self.useExtraMaps:
+		# 	for pass_name in passes:
+		# 		if pass_name != "diffuse":
+		# 			passes[pass_name] = None
+
+		settings = {
+			"location" : (self.x,self.y)
+		}
+
+		if self.location == (0,0):
+			settings["location"] = self.location
+		
+		diff_filepath = path
+		# bpy. makes rel to file, os. resolves any os.pardir refs.
+		abspath = os.path.abspath(bpy.path.abspath(diff_filepath))
+		other_passes = generate.find_additional_passes(abspath)
+		for pass_name in other_passes:
+			if pass_name not in passes or not passes.get(pass_name):
+				# Need to update the according tagged node with tex.
+				passes[pass_name] = bpy.data.images.load(
+					other_passes[pass_name],
+					check_existing=True)
+		
+		conf.log("Load Mat Passes:" + str(passes), vv_only=True)
+
+		if engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
+			generate.texspawn(mat,passes,settings)
+			res = 0
+		else:
+			return False, "Cycles, or Eevee supported"
+
+		success = res == 0
+
+		return success, None
+
 
 # -----------------------------------------------------------------------------
 # Registration
