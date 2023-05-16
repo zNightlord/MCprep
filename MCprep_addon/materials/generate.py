@@ -255,7 +255,11 @@ class PrepOptions:
 	pack_format: str
 	use_emission_nodes: bool
 	use_emission: bool
-	# use_nodegroup: bool = False # Temporary disable # Exprimental
+	# Exprimental
+	tint_color: Vector
+	use_nodegroup: bool = False
+	blend_method: DisplayMethod
+	shadow_method: DisplayMethod
 
 def matprep_cycles(mat, options: PrepOptions):
 	"""Determine how to prep or generate the cycles materials.
@@ -2425,3 +2429,4 @@ def spawn_texture(mat, options):
 # +				if key in processOut.keys():
 # +					for i in value:
 # +						links.new(processOut[key], i)
+

@@ -147,12 +147,18 @@ class McprepMaterialProps():
 		default=True
 	)
 	
-	advancedSettings = bpy.props.BoolProperty(
+	advancedSettings: bpy.props.BoolProperty(
 			name="Advanced",
 			description="Show Advanced Settings",
 			default=False)
+	tintColor: bpy.props.FloatVectorProperty(
+	    name="Biome Tint Color", 
+	    description="Change the default biome tint of blocks like grass",
+	    size=3,
+	    default=(0.227161, 0.614651, 0.089036)
+	)
 	
-	blendMode = bpy.props.EnumProperty(
+	blendMode: bpy.props.EnumProperty(
 			items=[
 				('HASHED', 'Alpha Hashed', 'Use noise to dither the visibility'),
 				('CLIP', 'Alpha Clip', 'Use the alpha threshold to clip the visibility'),
@@ -161,7 +167,7 @@ class McprepMaterialProps():
 			name="Blend Mode"
 		)
 	
-	shadowMode = bpy.props.EnumProperty(
+	shadowMode: bpy.props.EnumProperty(
 			items=[
 				('HASHED', 'Alpha Hashed', 'Use noise to dither the visibility'),
 				('CLIP', 'Alpha Clip', 'Use the alpha threshold to clip the visibility'),
@@ -170,7 +176,7 @@ class McprepMaterialProps():
 			name="Shadow Mode"
 	)
 
-	useNodegroup = bpy.props.BoolProperty(
+	useNodegroup: bpy.props.BoolProperty(
 			name="Use node group (Experimental)",
 			description="Use node group asset in the node tree",
 			default=False
@@ -292,6 +298,8 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 			elif mat.library:
 				count_lib_skipped += 1
 				continue
+			elif mat["MCPREP_NOPREP"] == 1:
+			  continue
 
 			passes = generate.get_textures(mat)
 			if not self.useExtraMaps or self.packFormat == "simple":
@@ -328,7 +336,11 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 				self.makeSolid, 
 				self.packFormat, 
 				self.useEmission, 
-				False # This is for an option set in matprep_cycles
+				False, # This is for an option set in matprep_cycles
+				self.tintColor,
+				self.useNodegroup,
+				self.blendMode,
+				self.shadowMode
 			)
 			if engine == 'CYCLES' or engine == 'BLENDER_EEVEE':
 				res = generate.matprep_cycles(
@@ -359,6 +371,10 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 			if self.animateTextures:
 				sequences.animate_single_material(
 					mat, context.scene.render.engine)
+			if mat["MCPREP_PREPPED"] != 1:
+				mat["MCPREP_PREPPED"] = 1
+				env.log(
+					f"During prep, found already prepped material: {mat}", vv_only=True)
 
 		# Sync materials.
 		if self.syncMaterials is True:
