@@ -1887,7 +1887,7 @@ class NodeUtilityMixin(object):
     return create_node(self.nodes, 'NodeFrame', **attrs)
     
   def connect_sockets(self, socket_input, socket_output):
-    # At some point there will be connect_sockets() function for this
+    # At some point there will be connect_sockets() (3.6) function for this
     self.links.new(socket_input, socket_output)
     
 
@@ -1898,6 +1898,8 @@ class Base_TexGen(RaiseErrorMixin):
     self.canon: str = get_mc_canonical_name(util.nameGeneralize(mat.name))[0]
     self._pack_name: str = "MCprep-default"
   
+  class passes:
+    
   @property
   def pack_name(self):
     return self._pack_name
@@ -1922,9 +1924,10 @@ class Base_TexGen(RaiseErrorMixin):
   def connect_texture(self):
     pass
 
-class Simple_TexGen(NodeUtilityMixin, Base_TexGen):
+class Simple_TexGen(Base_TexGen, NodeUtilityMixin):
   """Simple TexGen for Texture spawn"""
   location = Vector((0,0))
+  sockets = ("diffuse", "alpha", "tint", "specular", "normal")
   
   def __init__(self, mat: Material, options: PrepOptions):
     super().__init__(mat, options)
@@ -1936,7 +1939,7 @@ class Simple_TexGen(NodeUtilityMixin, Base_TexGen):
     
     
   def create_texture(self):
-    # Create frame nodd to contain
+    # Create frame node to contain
     nodeFrame = self.create_frame(
       name = self._pack_name, label = self._pack_name
     )
@@ -1964,6 +1967,11 @@ class Simple_TexGen(NodeUtilityMixin, Base_TexGen):
       self.texsockets[p] = [tex.outputs[0]]
       if p == "diffuse":
         self.texsockets["alpha"] = [tex.outputs[1]]
+      
+    def intialize_value(self):
+      for s in self.sockets:
+        if not s in self.texsockets:
+          self.texsockets[s] = 0
 
 
 
@@ -1984,7 +1992,7 @@ class TexGen(Simple_TexGen):
     diffuseInput = nodeSaturateMix.inputs[saturateMixIn[1]]
     normalInput = nodeNormalInv.inputs["Color"]
     
-    links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
+    self.connect_sockets(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
   
   def texture_process(self):
     
@@ -1993,15 +2001,15 @@ class TexGen(Simple_TexGen):
       operation = "MULTIPLY",
       name = "Add Color", label = "Add Color"
     )
-    nodeSpecInv = create_node(
-      nodes, 'ShaderNodeInvert', location = (-80, -160),
+    nodeSpecInv = self.create_node(
+      'ShaderNodeInvert', location = (-80, -160),
       name = "Smooth Inverse", label = "Smooth Inverse"
     )
-    nodeNormal = create_node(
-      nodes, 'ShaderNodeNormalMap', location = (-80, -470)
+    nodeNormal = self.create_node(
+      'ShaderNodeNormalMap', location = (-80, -470)
     )
-    nodeNormalInv = create_node(
-      nodes, 'ShaderNodeRGBCurve', location = (-380, -470),
+    nodeNormalInv = self.create_node(
+      'ShaderNodeRGBCurve', location = (-380, -470),
       name = "Normal Inverse", label = "Normal Inverse"
     )
     
@@ -2030,6 +2038,7 @@ class TexGen(Simple_TexGen):
     specularOutput = nodeSpecInv.outputs["Color"]
     normalOutput = nodeNormal.outputs["Normal"]
     emissionOutput = nodeMixEmit.outputs[mixEmitOut[0]]
+  
   def create_emission(self):
     cameraLocation = self.emission_location
     nodeLightPath = self.create_node(
@@ -2075,6 +2084,13 @@ class TexGen(Simple_TexGen):
 
 
 class SEUS_TexGen(TexGen):
+  
+  def texture_process(self):
+    nodeSeperate = self.create_node(
+      'ShaderNodeSeparateRGB', location = (-280, -280)
+      name = "RGB Seperation", label = "RGB Seperation"
+    )
+
   def seus(self):
     specularInput = nodeSeperate.inputs["Image"]
       
@@ -2135,58 +2151,66 @@ class PrincipledMixin(NodeUtilityMixin):
       
     
 class NodeGroupMixin(NodeUtilityMixin):
+  mat_format: str
   
-  def create_nodetree(self, name) -> NodeTree:
-    """Create a shader nodetree"""
+  def create_nodetree(self) -> NodeTree:
+    """Create a shader nodetree to contain all nodes for that pack format"""
+    name = self.mat_format
     node_tree = bpy.data.node_groups.get(name)
     if node_tree:
       nodeIn = node_tree.nodes.get("NodeGroupInput")
       nodeOut = node_tree.nodes.get("NodeGroupOutput")
       return node_tree, nodeIn, nodeOut
       
-  node_tree = bpy.data.node_groups.new(name, type='ShaderNodeTree')
+    node_tree = bpy.data.node_groups.new(name, type='ShaderNodeTree')
   
-  self.nodes = node_tree.nodes
-  self.links
+    self.nodes = node_tree.nodes
+    self.links = node_tree.links
   
-  nodeIn = self.create_node(
-    'NodeGroupInput', location= (-800,0), name = "NodeGroupInput", label = "NodeGroupInput"
-  )
-  nodeOut = self.create_node(
-    'NodeGroupOutput', location = (800,0), 
-    name = "NodeGroupOutput"
-  )
+    nodeIn = self.create_node(
+      'NodeGroupInput', location= (-800,0), 
+      name = "NodeGroupInput", label = "NodeGroupInput"
+   )
+    nodeOut = self.create_node(
+      'NodeGroupOutput', location = (800,0), 
+      name = "NodeGroupOutput"
+    )
 
-  sinput = node_tree.outputs.new('NodeSocketShader', "Shader")
+    sinput = node_tree.outputs.new('NodeSocketShader', "Shader")
 
-  return node_tree, nodeIn, nodeOut
+    return node_tree, nodeIn, nodeOut
       
   def create_nodegroup(self):
-    node_tree = f"MCPrep_{self.options.pack_format.capitalize()}"
-    # Use a custom or link a node group prest if not exist from the resource folder materials.blend
-    # For a non principle way is has a " Diffuse" suffix 
+    name = self.mat_fotmat
     nodes = self.nodes
     links = self.links
     
     if self.options.use_nodegroup and self.options.pack_format != "custom":
-      self.create_nodetree
-    if self.options.pack_format:
+      self.create_nodetree(name)
+      # Rather fetch the nodegroup from asset now we pack the code into a nodegroup
+    elif self.options.pack_format == "custom":
 
-        node_tree = node_tree if settings["use_principled"] else node_tree + " Diffuse"
-        name = node_tree
-        if not bpy.data.node_groups.get(node_tree):
-          blendfile = os.path.join(
-          os.path.dirname(__file__), "MCprep_resources", "mcprep_nodes.blend")
-          util.bAppendLink(os.path.join(blendfile, "NodeTree"), node_tree, True)
-        else:
-          node_tree, name = bpy.context.scene.mcprep_props.material_node_group, bpy.context.scene.mcprep_props.material_node_group.name
+      node_tree = self.generator.scene.mcprep_props.material_node_group
+      name = node_tree.name
 
-          node_group = self.create_node(
-            nodes, 'ShaderNodeGroup', location = (-50,0), 
-              name = name, label = name,
-              node_tree = node_tree
-            )
+      node_group = self.create_node(
+        'ShaderNodeGroup', location = (-50,0), 
+        name = name, label = name,
+        node_tree = node_tree
+      )
+    self.nodes = nodes
+    self.links = links
   
+  def asset_nodegroup(self, path):
+    """Function to get asset nodegroup from path"""
+    name = self.mat_format
+    node_tree = bpy.data.node_groups.get(name)
+    if not node_tree:
+      blendfile = path # Path(__file__).parent / "MCprep_resources" / "mcprep_nodes.blend"
+      res = util.bAppendLink(blendfile / "NodeTree", name, True)
+      if res is False:
+        self.raise_warning("Debug")
+      
 class Base_MatGen(RaiseErrorMixin):
   def __init__(self, generator):
     self.generator: Generator = generator
@@ -2200,7 +2224,8 @@ class Base_MatGen(RaiseErrorMixin):
     elif image_diff.size[0] == 0 or image_diff.size[1] == 0:
       if image_diff.source != 'SEQUENCE':
       # Common non animated case; this means the image is missing and would
-      # have already checked for replacement textures by now, so skip
+      # have already checked for replacement textures by now, so skipaa
+       self.raise_warning("Skipped Sequence texture.")
       return
     if not os.path.isfile(bpy.path.abspath(image_diff.filepath)):
       # can't check size or pixels as it often is not immediately avaialble
@@ -2217,10 +2242,13 @@ class Base_MatGen(RaiseErrorMixin):
     pass
   
 class MatGen(Base_MatGen, NodeUtilityMixin):
-  """A class for Blender default renderer to inherited"""
+  """"""
   blend_method = bpy.context.scene.mcprep_props
   def __init__(self, mat, options):
     super().__init__(mat, options)
+    self.mat_format = f"MCPrep_{self.options.pack_format.capitalize()}"
+    
+    
     
   def create_material(self):
     pass
@@ -2268,16 +2296,20 @@ class Simple_MatGen(NodeGroupMixin, PrincipledMixin, MatGen):
     nodeShaderMix = self.create_node('ShaderNodeMixShader', location)
     
   def connect_material(self):
+    self.connect_sockets(nodeDiffuse.outputs[0], nodeShaderMix.inputs[1])
+    self.connect_sockets(nodeTranparent.outputs[0], nodeShaderMix.inputs[2])
 
-class SEUS_MatGen(NodeGroupMixin, PrincipledMixin, MatGen):
+class Original_MatGen(NodeGroupMixin, PrincipledMixin, MatGen):
   
   def create_material(self):
-    nodeSeperate = self.create_node(
-      'ShaderNodeSeparateRGB', location = (-280, -280)
-      name = "RGB Seperation", label = "RGB Seperation"
-  )
+    
+class SEUS_MatGen(Original_MatGen):
+  
+  def create_material(self):
+    pass
+    
 
-class Specular_MatGen(NodeGroupMixin, PrincipledMixin, MatGen):
+class Specular_MatGen(Original_MatGen):
   
   def create_material(self):
     nodeMetalicValue = self.create_node(
@@ -2299,14 +2331,31 @@ class Base_Generate:
     self.mat = mat
     self.options = options
     self.context = context
-    self.scn = context.scene
-    
+    self.scene = context.scene
+  
+  def invoke_texgen(self):
+    pass
+  
+  def invoke_texgen_process(self):
+    pass
+  
+  def invoke_matgen(self):
+    pass
+  
+  def finalize(self):
+    pass
+  
 class Generate(Base_Generate):
   def __init__(self, context, mat):
     super().__init__(context, mat, options)
   
   def clear_nodes(self):
-    pass
+    self.mat.node_tree.nodes.clear()
+    
+  def clear_mcprep_nodes(self):
+    for n in self.mat.node_tree.nodes:
+      if n.parent.name == "MCPrep_nodes":
+        self.mat.node_tree.nodes.remove(n)
       
   def generate(self):
     pass
