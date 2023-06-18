@@ -1862,6 +1862,93 @@ def matgen_special_glass(mat, passes):
 
 ### Starts new material generation Code ###
 
+def get_pack_name(context = None):
+    if context == None:
+      context = bpy.context
+    scn = context.scene
+    path = os.path.normpath(scn.mcprep_texturepack_path)
+    for d in path.split(os.sep):
+      if d == 'assets':
+        break
+    return d
+    
+def connect_sockets(input_socket, output_socket):
+  if util.min_bv((3,6,0)):
+    from bpy import node_utils
+    node_utils.connect_sockets(input_socket,output_socket)
+  else: # Basic version of connect_sockets(), no virtual link
+    input_node = input_socket.node
+    output_node = output_socket.node
+    if input_node.id_data is output_node.id_data:
+      input_node.id_data.links.new(input_socket, output_socket)
+      
+def create_tex_nodes(passes, location = (0,0)):
+    """Create Image texture nodes 
+    Returns passes sockets"""
+    passes_sockets = {}
+    for i,(p,img) in enumerate(passes.items()):
+        tex_name = f"{p.capitalize()} Texture"
+        tex = self.create_node(
+          "ShaderNodeTexImage",
+          location = (location[0], location[1] + i * -300),
+          name = tex_name, label = tex_name, 
+          parent = nodeFrame,
+          image = img, 
+          mute = not img
+        )
+        # Set colorspace and interpolation
+        if p != "diffuse":
+          util.apply_colorspace(tex, 'Non-Color')
+        if hasattr(p, "interpolation") and p != "normal":
+          tex.interpolation = 'Closest'
+        tex[f"MCPrep_{p}"] = True
+        
+        # Store sockets
+        passes_sockets[p] = [tex.outputs[0]]
+        if p == "diffuse":
+          passes_sockets["alpha"] = [tex.outputs[1]]
+    
+    return passes_sockets
+    
+def emission(cameraLocation = (0,0) ):
+    
+    nodeLightPath = self.create_node(
+      "ShaderNodeLightPath", location = Vector((-320.0, 520.0)) + cameraLocation,
+      name = "Camera Light Path", label = "Camera Light Path"
+    )
+    nodeFalloff = self.create_node(
+      "ShaderNodeLightFalloff", location = Vector((-140, 335)) + cameraLocation,
+      name = "Camera Light Falloff", label = "Camera Light Falloff"
+    )
+    nodeLightValue = self.create_node(
+      "ShaderNodeValue", location = Vector((-320, 185)) + cameraLocation,
+      name = "Camera Light", label = "Camera Light")
+    nodeMixCam= self.create_node(
+      "ShaderNodeMixRGB", location = Vector((-140, 520)) + cameraLocation,
+      name = "Mix Camera Light", label = "Mix Camera Light",
+      operation = "MIX"
+    )
+    nodeMixEmit = self.create_node(
+      "ShaderNodeMixRGB", location = Vector((25, 520)) + cameraLocation,
+      name = "Combine Camera Light", label = "Combine Camera Light",
+      operation = "MULTIPLY"
+    )
+    
+    # Initialize default value  & sockets Camera Light 
+    mixCamIn = get_node_socket(nodeMixCam)
+    mixCamOut = get_node_socket(nodeMixCam, is_input=False)
+    mixEmitIn = get_node_socket(nodeMixEmit)
+    mixEmitOut = get_node_socket(nodeMixEmit, is_input=False)
+    
+    # Create links Camera Light 
+    links.new(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs[mixCamIn[0]])
+    links.new(nodeFalloff.outputs["Linear"], nodeMixCam.inputs[mixCamIn[1]])
+    links.new(nodeLightValue.outputs["Value"], nodeMixCam.inputs[mixCamIn[2]])
+    links.new(nodeMixCam.outputs[mixCamOut[0]], nodeMixEmit.inputs[mixEmitIn[1]])
+    
+    # return nodeMixEmit.inputs[mixEmitIn[2]],nodeMixEmit.outputs[mixEmitOut[0]]
+  
+
 from mathutils import Vector
 
 DisplayMethod = Literal['HASHED', 'CLIP', 'BLEND']

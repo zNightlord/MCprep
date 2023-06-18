@@ -33,26 +33,6 @@ from ..conf import env
 # -----------------------------------------------------------------------------
 # Material class functions
 # -----------------------------------------------------------------------------
-def post_script_limiter(post):
-  """A basic way to check if post script has any "banned" words for users
-  
-  Returns True if need to limit"""
-  context = bpy.context
-  scn_props = context.scene.mcprep_props
-  post_text = post.as_string()
-  limit_string = (
-    "import os",
-    "from os",
-    "import pathlib",
-    "from pathlib"
-  )
-  if not env.post_script_limit:
-    for s in limit_string:
-      if s in post_text:
-        break
-    return True
-  
-  return False # No Post script limit
 
 class McprepMaterialProps():
 	"""Class to inheret reused MCprep settings.

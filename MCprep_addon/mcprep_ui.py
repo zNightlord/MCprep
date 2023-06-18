@@ -469,12 +469,13 @@ class McprepPreference(bpy.types.AddonPreferences):
 			('experimental', 'Experimental', 'Enable experimental features')],
 		name="Feature set",
 		update=feature_set_update)
+	# Comment this for now
 	# exprimental features
-	post_script: bpy.props.BoolProperty(
-		name="Prep API / Post process script prototype",
-		description="An intial way to let users to run script after prep material. Allow you to create custom nodetree setup, useful for external renderer addon (Malt, ProRender, Octane, Renderman,...)"
-		default=False
-	)
+	# post_script: bpy.props.BoolProperty(
+	# 	name="Prep API / Post process script prototype",
+	# 	description="An intial way to let users to run script after prep material. Allow you to create custom nodetree setup, useful for external renderer addon (Malt, ProRender, Octane, Renderman,...)"
+	# 	default=False
+	# )
 
 	# addon updater preferences
 
@@ -730,11 +731,13 @@ class McprepPreference(bpy.types.AddonPreferences):
 			text = layout.row()
 			text.label(
 				text="You are going to enable feature that is in experimental. So beware of what kind of risk you using with it")
-			row = layout.row()
-			row.prop(self, "post_script")
-			if self.post_script:
-				row = layout.row()
-				row.label(text="For any question on how to use this, ask in Discord and there is an example script in MCprep resources folder")
+			# Comment this out for now for anyone, set the context scene mcprep_props post_process with a text datablock
+			# row = layout.row()
+			# row.prop(self, "post_script")
+			# if self.post_script:
+			# 	col = layout.column()
+			# 	col.label(text="For any question on how to use this, ask in Discord and there is an example script in MCprep resources folder")
+			# 	col.prop(context.scene.mcprep_props, "post_process")
 
 
 
