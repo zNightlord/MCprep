@@ -220,9 +220,11 @@ def draw_mats_common(self, context):
 				col = layout.column()
 				col.prop_search(scn_props, "material_node_group", bpy.data, "node_groups", text= "", icon = 'NODETREE')
 	
-	if util.exp() or not engine in ['CYCLES', 'BLENDER_EEVEE']:
-		col = layout.column()
-		col.prop(scn_props, "process_script", text = "")
+	# Make post process, inaccessible. 
+	# Use it for dev purpose manually set text datablock through Python editor
+	# if util.exp() or not engine in ['CYCLES', 'BLENDER_EEVEE']:
+	# 	col = layout.column()
+	# 	col.prop(scn_props, "process_script", text = "")
 
 
 class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
@@ -267,7 +269,6 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 		count = 0
 		count_lib_skipped = 0
 		post = scn_props.process_script
-		limit = post_script_limiter(post)
 
 		for mat in mat_list:
 			if not mat:
@@ -336,17 +337,11 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 						"Only Cycles and Eevee are supported"
 					)
 					return {'CANCELLED'}
-				elif util.exp() and post and not limit:
+				elif util.exp() and post:
 					self.report(
 						{"INFO"},
 						"Experimental. Run post process script"
 					)
-				else:
-					self.report(
-						{'ERROR'},
-						"Post process denied. Please recheck your script or contact the developer"
-					)
-					return {'CANCELLED'}
 
 			if self.animateTextures:
 				sequences.animate_single_material(
@@ -388,8 +383,9 @@ class MCPREP_OT_prep_materials(bpy.types.Operator, McprepMaterialProps):
 			self.report(
 				{"ERROR"},
 				"Nothing modified, be sure you selected objects with existing materials!")
-				
-		if util.exp() and bool(post):
+
+		# Post script
+		if util.exp() and post:
 			post.as_module().execute(context, mat, options)
 				
 

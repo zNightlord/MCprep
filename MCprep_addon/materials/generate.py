@@ -258,8 +258,8 @@ class PrepOptions:
 	# Exprimental
 	tint_color: Vector
 	use_nodegroup: bool = False
-	blend_method: DisplayMethod
-	shadow_method: DisplayMethod
+	blend_method: DisplayMethod = 'HASHED'
+	shadow_method: DisplayMethod = 'HASHED'
 
 def matprep_cycles(mat, options: PrepOptions):
 	"""Determine how to prep or generate the cycles materials.
@@ -288,12 +288,16 @@ def matprep_cycles(mat, options: PrepOptions):
 	#	res = matgen_special_water(mat, passes)
 	# if use_reflections and checklist(canon, "glass"):
 	#	res = matgen_special_glass(mat, passes)
-	if options.pack_format == "simple" and util.bv28():
-		res = matgen_cycles_simple(mat, options)
-	elif options.use_principled and hasattr(bpy.types, 'ShaderNodeBsdfPrincipled'):
-		res = matgen_cycles_principled(mat, options) 	
-	else:
-		res = matgen_cycles_original(mat, options) 
+	if not util.exp():
+		if options.pack_format == "simple" and util.bv28():
+			res = matgen_cycles_simple(mat, options)
+		elif options.use_principled and hasattr(bpy.types, 'ShaderNodeBsdfPrincipled'):
+			res = matgen_cycles_principled(mat, options) 	
+		else:
+			res = matgen_cycles_original(mat, options)
+	else: # Exprimental matgen
+	  matgen(mat, options)
+	
 	return res
 
 
@@ -716,6 +720,15 @@ def create_node(tree_nodes, node_type, **attrs):
 			node.data_type = 'RGBA'
 		else:
 			node = tree_nodes.new('ShaderNodeMixRGB')
+	# SeperateRGB in 3.3
+	if "NodeSeparate" in node_type:
+		mode = node_type.split("ShaderNodeSeparate")[1]
+		if util.min_bv((3, 3, 0)):
+			node = tree_nodes.new('ShaderNodeSeparateColor')
+			if mode in ["RGB", "HSV", "HSL"]:
+				node.mode = mode
+		else:
+			node = tree_nodes.new(f'ShaderNodeSeparate{mode}')
 	else:
 		node = tree_nodes.new(node_type)
 	for attr, value in attrs.items():
@@ -1861,8 +1874,9 @@ def matgen_special_glass(mat, passes):
 	return 0  # return 0 once implemented
 
 ### Starts new material generation Code ###
-
+  
 def get_pack_name(context = None):
+    """Get current active resourcepack_name"""
     if context == None:
       context = bpy.context
     scn = context.scene
@@ -1871,28 +1885,85 @@ def get_pack_name(context = None):
       if d == 'assets':
         break
     return d
+
+def create_nodetree(name, tree_type = 'ShaderNodeTree', no_input = True) -> NodeTree:
+    """Create a (shader) nodetree"""
+    node_tree = bpy.data.node_groups.get(name)
+    if node_tree:
+      nodeIn = node_tree.nodes.get("NodeGroupInput")
+      nodeOut = node_tree.nodes.get("NodeGroupOutput")
+      return node_tree, nodeIn, nodeOut
+      
+    node_tree = bpy.data.node_groups.new(name, type=tree_type)
+  
+    nodes = node_tree.nodes
+   
+    nodeIn = create_node(
+      nodes, 'NodeGroupInput', location= (-800,0), 
+      name = "NodeGroupInput", label = "NodeGroupInput"
+   )
+    nodeOut = create_node(
+      nodes, 'NodeGroupOutput', location = (800,0), 
+      name = "NodeGroupOutput"
+    )
+    socket = {
+        'CompositorNodeTree':['NodeSocketColor','Image'],
+        'GeometryNodeTree': ['NodeSocketGeometry','Geometry'],
+        'ShaderNodeTree': ['NodeSocketShader','Shader'],
+        # 'TextureNodeTree':[None,None]
+    }
     
+    if not no_input:
+      node_tree.inputs.new(socket[tree_type][0], socket[tree_type][1])
+    node_tree.outputs.new(socket[tree_type][0], socket[tree_type][1])
+
+    return node_tree, nodeIn, nodeOut
+
 def connect_sockets(input_socket, output_socket):
+  """Use node_utils.connect_sockets in 3.6 """
   if util.min_bv((3,6,0)):
-    from bpy import node_utils
+    from bpy_extras import node_utils
     node_utils.connect_sockets(input_socket,output_socket)
   else: # Basic version of connect_sockets(), no virtual link
     input_node = input_socket.node
     output_node = output_socket.node
     if input_node.id_data is output_node.id_data:
       input_node.id_data.links.new(input_socket, output_socket)
-      
-def create_tex_nodes(passes, location = (0,0)):
+
+def is_haltable(image_diff):
+  if not image_diff:
+    print(f"Could not find diffuse image, halting generation: {mat.name}")
+    return 1
+  elif image_diff.size[0] == 0 or image_diff.size[1] == 0:
+    if image_diff.source != 'SEQUENCE':
+      # Common non animated case; this means the image is missing and would
+      # have already checked for replacement textures by now, so skip
+      return 1
+    if not os.path.isfile(bpy.path.abspath(image_diff.filepath)):
+      # can't check size or pixels as it often is not immediately avaialble
+      # so instea, check against firs frame of sequence to verify load
+      return 1
+  return 0 # success
+
+def create_tex_nodes(nodes, passes, location = (0,0), parent = None):
     """Create Image texture nodes 
     Returns passes sockets"""
     passes_sockets = {}
+    resourcepack_name = get_pack_name()
+    texFrame = create_node(
+      nodes, "NodeFrame", 
+      name = pack_name, label = pack_name,
+      use_custom_color = True, color = (0.7, 0, 0),
+      parent = None
+    )
+    # Iterate through passes, create tex nodes
     for i,(p,img) in enumerate(passes.items()):
         tex_name = f"{p.capitalize()} Texture"
-        tex = self.create_node(
+        tex = create_node(nodes,
           "ShaderNodeTexImage",
           location = (location[0], location[1] + i * -300),
           name = tex_name, label = tex_name, 
-          parent = nodeFrame,
+          parent = texFrame,
           image = img, 
           mute = not img
         )
@@ -1910,28 +1981,39 @@ def create_tex_nodes(passes, location = (0,0)):
     
     return passes_sockets
     
-def emission(cameraLocation = (0,0) ):
+def emission_nodes(nodes, cameraLocation = (0,0) ):
+    """Emission nodes"""
+    emitFrame = create_node(
+      nodes, "NodeFrame", 
+      use_custom_color = True, color = (0, 0.1, 0.7)
+    )
     
-    nodeLightPath = self.create_node(
-      "ShaderNodeLightPath", location = Vector((-320.0, 520.0)) + cameraLocation,
-      name = "Camera Light Path", label = "Camera Light Path"
+    nodeLightPath = create_node(
+      nodes, "ShaderNodeLightPath", location = Vector((-320.0, 520.0)) + cameraLocation,
+      name = "Camera Light Path", label = "Camera Light Path",
+      parent = emitFrame
     )
-    nodeFalloff = self.create_node(
+    nodeFalloff = create_node(nodes,
       "ShaderNodeLightFalloff", location = Vector((-140, 335)) + cameraLocation,
-      name = "Camera Light Falloff", label = "Camera Light Falloff"
+      name = "Camera Light Falloff", label = "Camera Light Falloff",
+      parent = emitFrame
     )
-    nodeLightValue = self.create_node(
+    nodeLightValue = create_node(nodes,
       "ShaderNodeValue", location = Vector((-320, 185)) + cameraLocation,
-      name = "Camera Light", label = "Camera Light")
-    nodeMixCam= self.create_node(
+      name = "Camera Light", label = "Camera Light",
+      parent = emitFrame
+    )
+    nodeMixCam= create_node(nodes,
       "ShaderNodeMixRGB", location = Vector((-140, 520)) + cameraLocation,
       name = "Mix Camera Light", label = "Mix Camera Light",
-      operation = "MIX"
+      operation = "MIX",
+      parent = emitFrame
     )
-    nodeMixEmit = self.create_node(
+    nodeMixEmit = create_node(nodes,
       "ShaderNodeMixRGB", location = Vector((25, 520)) + cameraLocation,
       name = "Combine Camera Light", label = "Combine Camera Light",
-      operation = "MULTIPLY"
+      operation = "MULTIPLY",
+      parent = emitFrame
     )
     
     # Initialize default value  & sockets Camera Light 
@@ -1939,16 +2021,355 @@ def emission(cameraLocation = (0,0) ):
     mixCamOut = get_node_socket(nodeMixCam, is_input=False)
     mixEmitIn = get_node_socket(nodeMixEmit)
     mixEmitOut = get_node_socket(nodeMixEmit, is_input=False)
+    nodeLightValue.outputs[0].default_value = 4.0
+    nodeMixEmit.inputs[mixEmitIn[0]].default_value = 1.0
     
     # Create links Camera Light 
-    links.new(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs[mixCamIn[0]])
-    links.new(nodeFalloff.outputs["Linear"], nodeMixCam.inputs[mixCamIn[1]])
-    links.new(nodeLightValue.outputs["Value"], nodeMixCam.inputs[mixCamIn[2]])
-    links.new(nodeMixCam.outputs[mixCamOut[0]], nodeMixEmit.inputs[mixEmitIn[1]])
+    connect_sockets(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs[mixCamIn[0]])
+    connect_sockets(nodeFalloff.outputs["Linear"], nodeMixCam.inputs[mixCamIn[1]])
+    connect_sockets(nodeLightValue.outputs["Value"], nodeMixCam.inputs[mixCamIn[2]])
+    connect_sockets(nodeMixCam.outputs[mixCamOut[0]], nodeMixEmit.inputs[mixEmitIn[1]])
     
-    # return nodeMixEmit.inputs[mixEmitIn[2]],nodeMixEmit.outputs[mixEmitOut[0]]
+    return nodeMixEmit.inputs[mixEmitIn[2]], nodeMixEmit.outputs[mixEmitOut[0]]
+    
+def texture_process(nodes, options: PrepOptions):
+  
+    sockets = {
+      "diffuse" : [None, None]
+      "specular": [None, None]
+      "normal": [None, None]
+      "metalic": [None, None]
+      "emission": [None, None]
+      "alpha": [None]
+      "tint": [None]
+    }
+    specInvLoc = (0,0) if options.pack_format == 'SEUS' else (-80,-160)
+    
+  nodeSaturateMix = create_node(
+    nodes, 'ShaderNodeMixRGB', location = (-380, 140),
+    operation = "MULTIPLY",
+    name = "Add Color", label = "Add Color"
+  )
+    
+  # PBR setup
+  if options.pack_format != "simple":
+    nodeSpecInv = create_node(nodes,
+      'ShaderNodeInvert', 
+      location = specInvLoc, #(-80, -160),
+      name = "Smooth Inverse", label = "Smooth Inverse"
+    )
+    nodeNormal = create_node(nodes,
+      'ShaderNodeNormalMap', location = (-80, -470)
+    )
+    nodeNormalInv = create_node(nodes,
+      'ShaderNodeRGBCurve', location = (-380, -470),
+      name = "Normal Inverse", label = "Normal Inverse"
+    )
+    connect_sockets(nodeNormalInv.outputs[0], nodeNormal.inputs["Color"])
+    
+  saturateMixIn =  get_node_socket(nodeSaturateMix) 
+  saturateMixOut = get_node_socket(nodeSaturateMix, is_input=False)
+  
+  nodeSaturateMix.inputs[saturateMixIn[0]].default_value = 1.0
+  sockets["diffuse"][0] = nodeSaturateMix.inputs[saturateMixIn[1]]
+  sockets["tint"][0] = nodeSaturateMix.inputs[saturateMixIn[2]]
+  sockets["diffuse"][1] = nodeSaturateMix.outputs[saturateMixOut[0]]
+  
+  if options.pack_format != "simple":
+    sockets["specular"][1] = nodeSpecInv.outputs["Color"] 
+    sockets["specular"][0] = nodeSpecInv.inputs["Color"] # This get set another time if is SEUS
+    sockets["normal"][0] = nodeNormalInv.inputs[0]
+    sockets["normal"][1] = nodeNormal.outputs["Normal"]
+    emissionOutput = None
+    
+    if options.use_emission_nodes:
+      emissionInput, emissionOutput = emission_nodes(nodes)
+      sockets["emission"][1] = emissionOutput
+      
+    if options.pack_format == 'SEUS':
+      sockets = tex_process_seus(nodes, output_sockets)
+      if options.use_emission_nodes:
+        connect_sockets(sockets["emission"][0], emissionInput)
+        
+    elif option.pack_format == 'Specular':
+      sockets = tex_process_specular(nodes, output_sockets)
+    
+    
+    return output_sockets
+
+def tex_process_seus(nodes, sockets):
+    
+    nodeSeperate = create_node(
+      nodes, 'ShaderNodeSeparateRGB', location = (-280, -280)
+      name = "RGB Seperation", label = "RGB Seperation"
+    )
+    connect_sockets(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
+    sockets["specular"][0] = nodeSeperate.inputs["R"]
+    sockets["emission"][0] = nodeSeperate.inputs["B"]
+    sockets["metallic"][1] = nodeSeperate.outputs["G"]
+  return sockets
+
+def tex_process_specular(nodes, sockets):
+    nodeMetalicValue = create_node(
+      nodes, 'ShaderNodeValue', location = (0, 0) ,
+      name = "Metallic", label = "Metallic"
+    )
+    nodeMetalicValue.outputs['Value'].default_value = 1.0
+    
+    
+    sockets["metallic"][1]  = nodeMetalicValue.outputs['Value']
+  
+    return sockets
+ 
+def grayscale_blend(canon, nodeSaturateMix, options: PrepOptions):
+    """Grayscale blending"""
+    image_diff = options.passes["difuse"].image
+    if not checklist(canon, "desaturated"):
+      pass
+    elif not is_image_grayscale(image_diff):
+      pass
+    else:
+      conf.log(f"Texture desaturated: {canon}", vv_only=True)
+      desat_color = conf.json_data['blocks']['desaturated'][canon]
+    saturateMixInput = nodeSaturateMix.inputs[saturateMixIn[2]]
+    if len(desat_color) < len(saturateMixInput.default_value):
+      desat_color.append(1.0)
+      nodeSaturateMix.inputs[saturateMixIn[2]].default_value = desat_color
+      nodeSaturateMix.mute = False
+      nodeSaturateMix.hide = False
+
+def principle_shader(nodes, offset_location = (0,0), parent = None):
+    """a general principle node cross compability
+    """
+    offset_location = Vector(offset_location)
+    diffuseReroute = create_node(nodes, 'NodeReroute', location = offset_location + Vector((-100,0)))
+    principled = create_node(
+      nodes, 'ShaderNodeBsdfPrincipled', location = offset_location,
+      name = "MCprep Principle Shader", label = "MCprep Principle Shader", 
+      parent = parent
+    )
+    emit_socket = principled.inputs.get("Emission")
+    emitStr_socket = principled.inputs.get("Emission Strength")
+    # For version 2.92 lower, emission strength workaround
+    if not util.min_bv((2,92)):
+      mixEmissionStrength = self.create_node(
+        'ShaderNodeMixRGB', location = offset_location + Vector((-200, -500)),
+        name = "Emission Strength Mix" label = "Emission Strength Mix",
+        operation = 'MULTIPLY',
+        parent = parent 
+      )
+      # emissionStrength = self.create_node('ShaderNodeValue', location = offset_location + Vector((-200, -750)),
+      #   name = "Emission Strength Value", label = "Emission Strength Value"
+      # )
+      mixSocketInputs = get_node_socket(mixEmissionStrength)
+      mixSocketOutputs = get_node_socket(mixEmissionStrength, is_input = False)
+      
+      # connect_sockets(emissionStrength.outputs[0], mixEmissionStrength.inputs[mixSocketInputs[2]])
+      connect_sockets( mixEmissionStrength.outputs[mixSocketOutputs[0]], principled.inputs['Emission'])
+      
+      mixEmissionStrength.inputs[mixSocketInputs[0]].default_value = 1.0
+      emit_socket = mixEmissionStrength.inputs[mixSocketInputs[1]]
+      emitStr_socket = mixEmissionStrength.inputs[mixSocketInputs[2]]
+      
+    connect_sockets(diffuseReroute.outputs[0], principled.inputs.get("Base Color"))
+    connect_sockets(diffuseReroute.outputs[0], emit_socket)
+    
+    principleInputs = principled.inputs
+    input_sockets = {
+      "diffuse": diffuseReroute.inputs[0],
+      # "emission": emit_socket,
+      "emission": emitStr_socket
+    }
+
+    for i in principleInputs:
+      # if i.name == "Base Color":
+      #   input_sockets["diffuse"] = i
+      if i.name in ["Alpha", "Roughness", "Metallic", "Specular", "Normal"]
+        input_sockets[i.name.lower()] = i
+      
+    return input_sockets, principled.outputs[0]
+
+def simple_shader(nodes, offset_location = (0,0), parent = None):
+    """Simple Diffuse emission shader"""
+    offset_location = Vector(offset_location)
+    nodeRerouteDiffuse = create_node(
+      nodes, 'NodeReroute', location = Vector((0,0)) + offset_location,
+      name = "Diffuse", label = "Diffuse",
+      parent = parent
+    )
+    
+    nodeDiffuse = create_node(nodes,  
+      'ShaderNodeBsdfDiffuse', location = Vector((100,0)) + offset_location,
+      name = "Diffuse Shader", label = "Diffuse Shader",
+      parent = parent
+    )
+    nodeEmission = create_node(
+      nodes, 'ShaderNodeEmission', location = Vector((50,-200)) + offset_location,
+      parent = parent
+    )
+    nodeTransparent = create_node(
+      nodes, 'ShaderNodeBsdfTransparent', location = Vector((300,-200)) + offset_location,
+      parent = parent
+    )
+    nodeTransparentMix = create_node(
+      nodes 'ShaderNodeMixShader', location = Vector((400,0)) + offset_location,
+      parent = parent
+    )
+    nodeEmissionMix = create_node(
+      nodes 'ShaderNodeMixShader', location = Vector((200,0)) + offset_location,
+      parent = parent
+    )
+      
+    diffuse_in = [nodeDiffuse, nodeEmission]
+    for n in diffuse_in:
+      connect_sockets(nodeRerouteDiffuse.outputs[0], n.inputs[0])
+    
+    connect_sockets(nodeDiffuse.outputs[0], nodeEmissionMix.inputs[1])
+    connect_sockets(nodeEmission.outputs[0], nodeEmissionMix.inputs[2])
+    connect_sockets(nodeEmissionMix.outputs[0], nodeTransparentMix.inputs[1])
+    connect_sockets(nodeTranparent.outputs[0], nodeTransparentMix.inputs[2])
+    
+    input_sockets = {
+      "diffuse" : nodeRerouteDiffuse.inputs[0]
+      "emission_strength": nodeEmission.inputs[1]
+    }
+
+def original_shader(nodes, location = (0,0), parent = None)
+  """I guess this is here for now"""
+  print("Nothing")
+  
+def create_shader(nodes, options: PrepOptions, location = (0,0), parent = None):
+  matGen = util.nameGeneralize(mat.name)
+  canon, form = get_mc_canonical_name(matGen)
+  
+  use_principled = True # options.use_principled # Always True for now?
+  if use_principled:
+    input_sockets, output_socket = principle_shader(
+      nodes, 
+      location = location, parent = parent
+    )
+  sockets = texture_process(nodes, passes_sockets, )
+  
+  if not options.use_emission:
+    input_sockets["emission"].default_value = 0
+  # Sets default reflective values
+  if options.use_reflections and checklist(canon, "reflective"):
+    input_sockets["roughness"].default_value = 0
+  else:
+    input_sockets["roughness"].default_value = 0.7
+  
+  # Sets default metallic values
+  if options.use_reflections and checklist(canon, "metallic"):
+    sockets["metallic"][1].default_value = 1
+    if input_sockets["roughness"].default_value < 0.2:
+      input_sockets["roughness"].default_value = 0.2
+    else:
+      input_sockets["metallic"].default_value = 0
   
 
+def matgen(mat, options: PrepOptions):
+  use_nodegroup = options.use_nodegroup
+  pack_format = options.pack_format
+  passes = options.passes
+  matGen = util.nameGeneralize(mat.name)
+  canon, form = get_mc_canonical_name(matGen)
+  image_diff = passes["diffuse"].image
+  # Halt if no diffuse image
+  if is_haltable(image_diff):
+    return
+  
+  mat.use_nodes = True
+  nodes = mat.nodes
+  
+  animated_data = copy_texture_animation_pass_settings(mat)
+  # Utilize node frame to check if material is prepped for the first time
+  prepedFrame = nodes.get("MCprep_generated")
+  nodeOut = nodes.get("MCprep Material Output")
+  if not prepedFrame:
+    nodes.clear()
+    parent = create_node(nodes, "NodeFrame", 
+      name = "MCprep_generated", label = "MCPrep",
+      use_custom_color = True, color = (0, 0.8, 0.3)
+    )
+    
+    nodeOut = create_node(
+      nodes, 'ShaderNodeOutputMaterial', location = (820, 0),
+      name = "MCprep Material Output", label = "MCprep Material Output", 
+      width =  160
+    )
+    
+  # Originally MCprep clears every nodes, now it only clear what inside this frame
+  for n in nodes:
+    if n.parent == prepedFrame:
+      nodes.remove(n)
+  
+  # Create the texture nodes
+  passes_sockets = create_tex_nodes(nodes, passes, location = (-400,0), parent = prepedFrame)
+  
+  # Create the nodetree for SEUS, Specular, Simple or using existing nodegroup
+  if use_nodegroup:
+    mat_nodes = nodes
+    if pack_format != 'CUSTOM':
+      name = f"MCprep_{pack_format}"
+      node_tree, nodeInput, nodeOutput = create_nodetree(name, no_input = True)
+      nodes = node_tree.nodes
+      sockets = ("diffuse", "alpha", "tint", "roughness", "metallic", "normal")
+      for p in passes:
+        node_group.inputs.new("NodeSocketColor", p.capitalize())
+    else:
+      node_tree = bpy.context.scene.mcprep_props.material_node_group
+      name = f"MCPrep_{node_tree.name}"
+    nodeGroup = create_node(
+      mat_nodes, "ShaderNodeGroup", location = (200,0),
+      name = "MCPrep_Shader", label = name
+      node_tree = node_tree, 
+      parent = prepedFrame
+    )
+    prepedFrame = None
+  
+  # Starts create the nodes depend on the "nodes" nodetree and having node frame parent
+  if pack_format != "CUSTOM"
+    input_sockets, output_socket = create_shader(nodes, location = (200,0), parent = prepedFrame)
+    
+    nodeSaturateMix = inputs_sockets["diffuse"].node
+    # Grayscale blending
+    grayscale_blend(canon, nodeSaturateMix, options)
+  
+  
+  # Connect textures
+  connect_textures(mat, passes_sockets, options)
+  # Connect output shader
+  connect_sockets(output_socket, nodeOut.inputs[0])
+  
+  # Set Blend Mode and Shadow Mode
+  material_options(mat, options):
+  apply_texture_animation_pass_settings(mat, animated_data)
+
+
+def connect_textures(mat, passes_sockets, options):
+  nodes = mat.nodes
+  active = nodes.active
+  if active.bl_idname == "ShaderNodeGroup":
+    node = active
+  if options.use_nodegroup:
+    node = nodes.get("MCPrep_Shader")
+  for i in node.inputs:
+    name = i.name.lower()
+    if name in passes_sockets:
+      if name == 'alpha':
+        connect_sockets(passes_sockets["diffuse"].outputs[1], i)
+      else:
+        connect_sockets(passes_sockets[name].outputs[0], i)
+    
+
+def material_options(mat, options: PrepOptions):
+  """for any attr has the same in material
+  shadow_method, blend_method"""
+  for k,v in vars(options).items():
+    if hasattr(mat, k):
+      setattr(mat, k, v)
+
+    
 from mathutils import Vector
 
 DisplayMethod = Literal['HASHED', 'CLIP', 'BLEND']
@@ -2035,7 +2456,7 @@ class Simple_TexGen(Base_TexGen, NodeUtilityMixin):
     # Create the image texture from passes
     for i,(p,img) in enumerate(self.passes.items()):
       tex_name = f"{p.capitalize()} Texture"
-      tex = self.create_node(
+      tex = create_node(nodes,
         "ShaderNodeTexImage",
         location = (self.location[0], self.location[1] + i * -300),
         name = tex_name, label = tex_name, 
@@ -2083,19 +2504,19 @@ class TexGen(Simple_TexGen):
   
   def texture_process(self):
     
-    nodeSaturateMix = self.create_node(
+    nodeSaturateMix = create_node(nodes,
       'ShaderNodeMixRGB', location = (-380, 140),
       operation = "MULTIPLY",
       name = "Add Color", label = "Add Color"
     )
-    nodeSpecInv = self.create_node(
+    nodeSpecInv = create_node(nodes,
       'ShaderNodeInvert', location = (-80, -160),
       name = "Smooth Inverse", label = "Smooth Inverse"
     )
-    nodeNormal = self.create_node(
+    nodeNormal = create_node(nodes,
       'ShaderNodeNormalMap', location = (-80, -470)
     )
-    nodeNormalInv = self.create_node(
+    nodeNormalInv = create_node(nodes,
       'ShaderNodeRGBCurve', location = (-380, -470),
       name = "Normal Inverse", label = "Normal Inverse"
     )
@@ -2128,23 +2549,23 @@ class TexGen(Simple_TexGen):
   
   def create_emission(self):
     cameraLocation = self.emission_location
-    nodeLightPath = self.create_node(
+    nodeLightPath = create_node(nodes,
       "ShaderNodeLightPath", location = Vector((-320.0, 520.0)) + cameraLocation,
       name = "Camera Light Path", label = "Camera Light Path"
     )
-    nodeFalloff = self.create_node(
+    nodeFalloff = create_node(nodes,
       "ShaderNodeLightFalloff", location = Vector((-140, 335)) + cameraLocation,
       name = "Camera Light Falloff", label = "Camera Light Falloff"
     )
-    nodeLightValue = self.create_node(
+    nodeLightValue = create_node(nodes,
       "ShaderNodeValue", location = Vector((-320, 185)) + cameraLocation,
       name = "Camera Light", label = "Camera Light")
-    nodeMixCam= self.create_node(
+    nodeMixCam= create_node(nodes,
       "ShaderNodeMixRGB", location = Vector((-140, 520)) + cameraLocation,
       name = "Mix Camera Light", label = "Mix Camera Light",
       operation = "MIX"
     )
-    nodeMixEmit = self.create_node(
+    nodeMixEmit = create_node(nodes,
       "ShaderNodeMixRGB", location = Vector((25, 520)) + cameraLocation,
       name = "Combine Camera Light", label = "Combine Camera Light",
       operation = "MULTIPLY"
@@ -2352,12 +2773,7 @@ class MatGen(Base_MatGen, NodeUtilityMixin):
     shaderOut = node_group.outputs[0]
     self.connect_sockets(shaderOut, nodeOut.inputs[0])
 
-  def blend_method(self, method: DisplayMethod='HASHED'):
-    self.mat.blend_method = method
   
-  def shadow_method(self, method:DisplayMethod='HASHED'):
-    self.mat.shadow_method = method
-    
   def animation_pass(self):
     apply_texture_animation_pass_settings(self.mat, animated_data)
     
