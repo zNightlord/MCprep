@@ -27,6 +27,9 @@ import subprocess
 
 import bpy
 
+if min_bv((3,5,0)):
+  import PyOpenColorIO as ocio
+
 from . import conf
 from .conf import env
 
@@ -37,7 +40,23 @@ SPAWNER_EXCLUDE = "Spawner Exclude"
 # -----------------------------------------------------------------------------
 # GENERAL SUPPORTING FUNCTIONS (no registration required)
 # -----------------------------------------------------------------------------
+  
+def get_colorspaces():
+  if min_bv((3,5,0)):
+    ocio_config = ocio.GetCurrentConfig()
+    return [cs for cs in ocio_config.getColorSpaces()]
+  return []
 
+def get_raw_noncolor(colorspaces):
+  """Return the best option for Non Color Raw
+    Unfinished. not work.
+  """
+  for cs in colorspaces:
+    if cs.getName() == "Non-color":
+      break
+    if cs.getFamilly().get() == "raw" and cs.isData() and cs.getBit().getValue() == 8:
+      break
+  return cs
 
 def apply_colorspace(node, color_enum):
 	"""Apply color space in a cross compatible way, for version and language.
