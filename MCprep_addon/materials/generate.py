@@ -736,6 +736,18 @@ def create_node(tree_nodes, node_type, **attrs):
 			node.data_type = 'RGBA'
 		else:
 			node = tree_nodes.new('ShaderNodeMixRGB')
+	elif "Combine" in node_type or "Seperate" in node_type:
+		# Seperate and Combine Color
+		mode = attrs.get("mode")
+		if not mode: # if there is "mode" attr use it 
+			mode = nodetype[-3:]
+		if mode in ['RGB', 'HSV']: # ignore XYZ
+			sfix = nodetype[:-3]
+			if util.min_bv((3, 2, 0)):
+				node = tree_nodes.new(f'{sfix}Color')
+				node.mode = mode
+			else:
+				node = tree_nodes.new(f'{sfix}{mode}')
 	else:
 		node = tree_nodes.new(node_type)
 	for attr, value in attrs.items():
@@ -747,6 +759,7 @@ def create_node(tree_nodes, node_type, **attrs):
 		elif attr == 'hide_sockets':  # option to hide socket for big node
 			node.inputs.foreach_set('hide', [value] * len(node.inputs))
 			node.outputs.foreach_set('hide', [value] * len(node.outputs))
+		
 	return node
 
 
