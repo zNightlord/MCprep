@@ -1952,7 +1952,7 @@ def create_tex_nodes(nodes, passes, location = (0,0), parent = None):
     resourcepack_name = get_pack_name()
     texFrame = create_node(
       nodes, "NodeFrame", 
-      name = pack_name, label = pack_name,
+      name = "MCPrep_TexFrame", label = pack_name,
       use_custom_color = True, color = (0.7, 0, 0),
       parent = None
     )
