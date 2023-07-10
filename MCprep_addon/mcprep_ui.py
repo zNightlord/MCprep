@@ -37,6 +37,7 @@ from .spawner import mcmodel
 from .spawner import meshswap
 from .spawner import mobs
 from .spawner import spawn_util
+from .browser import spawner_ui
 from .conf import env
 # from .import_bridge import bridge
 
@@ -466,6 +467,11 @@ class McprepPreference(bpy.types.AddonPreferences):
 			('experimental', 'Experimental', 'Enable experimental features')],
 		name="Feature set",
 		update=feature_set_update)
+	use_browser_ui: bpy.props.BoolProperty(
+		name="Use New Asset Browser UI",
+		description="Asset browser 3.0+ Only",
+		default=True,
+	)
 
 	# addon updater preferences
 
@@ -1682,6 +1688,9 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 		ops.url = "https://theduckcow.com/dev/blender/mcprep/mcprep-spawner/"
 		addon_updater_ops.check_for_update_background()
 
+		addon_prefs = util.get_user_preferences()
+		if addon_prefs.use_browser_ui:
+			spawner_ui.draw_library()
 
 class MCPREP_PT_mob_spawner(bpy.types.Panel):
 	"""MCprep panel for mob spawning"""
@@ -1939,6 +1948,15 @@ class McprepProps(bpy.types.PropertyGroup):
 		name="show effect settings",
 		description="Show extra MCprep panel settings",
 		default=False)
+	browser_tab_category: bpy.props.EnumProperty(
+		name="Browser tab category",
+		description="",
+		items=[
+			('BLOCK', 'Block', 'Show mob spawner'),
+			('ENTITY', 'Entity', 'Show model (block) spawner'),
+			('ITEM', 'Item', 'Show item spawner'),
+			('MATERIAL', 'Material', 'Show entity spawner')]
+	)
 
 	# Rig settings
 	spawn_rig_category: bpy.props.EnumProperty(
