@@ -21,6 +21,8 @@ import time
 
 import bpy
 
+from typing import Union
+
 # addon imports
 from . import addon_updater_ops
 from . import conf
@@ -31,6 +33,7 @@ from . import world_tools
 from .materials import material_manager
 from .materials.generate import update_mcprep_texturepack_path
 from .materials.skin import update_skin_path
+from .materials.prep import McprepMaterialProps
 from .spawner import effects
 from .spawner import entities
 from .spawner import mcmodel
@@ -100,6 +103,23 @@ def restart_layout(layout):
 	col.label(text="to complete update")
 
 
+def get_icon(section:Union[str,"main","mobs","items","effects"], icon_name:str, override:bool = False, not_found:str = 'NONE'):
+  """
+  section: (main, mobs, item, effect)
+  override for parts that need icon to be on
+  """
+  use_icons = not env.use_icons or override
+  icon = None
+  if use_icons or env.preview_collections[section] != "":
+    icon = env.preview_collections[section].get(icon_name)
+  if not icon:
+    icons = bpy.types.UILayout.bl_rna.functions["prop"].parameters["icon"].enum_items.keys()
+      
+    icon_ref = {k : i for i, k in enumerate(icons)}
+      
+    return icon_ref[not_found]
+    
+  return icon.icon_id
 # -----------------------------------------------------------------------------
 # UI class functions
 # -----------------------------------------------------------------------------
@@ -128,16 +148,10 @@ class MCPREP_MT_mob_spawner(bpy.types.Menu):
 			# show icon if available
 			mob = scn_props.mob_list_all[mobkey]
 			icn = "mob-{}".format(mob.index)
-			if env.use_icons and icn in env.preview_collections["mobs"]:
-				ops = layout.operator(
-					"mcprep.mob_spawner",
-					text=mob.name,
-					icon_value=env.preview_collections["mobs"][icn].icon_id)
-			elif env.use_icons:
-				ops = layout.operator(
-					"mcprep.mob_spawner", text=mob.name, icon="BLANK1")
-			else:
-				ops = layout.operator("mcprep.mob_spawner", text=mob.name)
+			ops = layout.operator(
+				"mcprep.mob_spawner",
+				text=mob.name,
+				icon_value=get_icon("mobs", icn))
 			ops.mcmob_type = mob.mcmob_type
 
 			# Skip prep materials in case of unique shader.
@@ -185,15 +199,9 @@ class MCPREP_MT_item_spawn(bpy.types.Menu):
 			layout.label(text="No items found!")
 		for item in context.scene.mcprep_props.item_list:
 			icn = "item-{}".format(item.index)
-			if env.use_icons and icn in env.preview_collections["items"]:
-				ops = layout.operator(
-					"mcprep.spawn_item", text=item.name,
-					icon_value=env.preview_collections["items"][icn].icon_id)
-			elif env.use_icons:
-				ops = layout.operator(
-					"mcprep.spawn_item", text=item.name, icon="BLANK1")
-			else:
-				ops = layout.operator("mcprep.spawn_item", text=item.name)
+			ops = layout.operator(
+				"mcprep.spawn_item", text=item.name,
+				icon_value=get_icon("items", icn))
 			ops.filepath = item.path
 
 
@@ -225,16 +233,10 @@ class MCPREP_MT_effect_spawn(bpy.types.Menu):
 				ops.frame = context.scene.frame_current
 			elif effect.effect_type == effects.IMG_SEQ:
 				icon = "effects-{}".format(effect.index)
-				if env.use_icons and icon in env.preview_collections["effects"]:
-					ops = col.operator(
-						"mcprep.spawn_instant_effect",
-						text=effect.name,
-						icon_value=env.preview_collections["effects"][icon].icon_id)
-				else:
-					ops = col.operator(
-						"mcprep.spawn_instant_effect",
-						text=effect.name,
-						icon="RENDER_RESULT")
+				ops = col.operator(
+					"mcprep.spawn_instant_effect",
+					text=effect.name,
+					icon_value=get_icon("effects", icon, not_found='RENDER_RESULT'))
 				ops.effect_id = str(effect.index)
 				ops.location = loc
 				ops.frame = context.scene.frame_current
@@ -292,20 +294,13 @@ class MCPREP_MT_3dview_add(bpy.types.Menu):
 		layout = self.layout
 		props = context.scene.mcprep_props
 
-		if env.preview_collections["main"] != "":
-			spawner_icon = env.preview_collections["main"].get("spawner_icon")
-			meshswap_icon = env.preview_collections["main"].get("meshswap_icon")
-			sword_icon = env.preview_collections["main"].get("sword_icon")
-			effects_icon = env.preview_collections["main"].get("effects_icon")
-			entity_icon = env.preview_collections["main"].get("entity_icon")
-			model_icon = env.preview_collections["main"].get("model_icon")
-		else:
-			spawner_icon = None
-			meshswap_icon = None
-			sword_icon = None
-			effects_icon = None
-			entity_icon = None
-			model_icon = None
+		spawner_icon = get_icon("main", "spawner_icon", override=True)
+		meshswap_icon = get_icon("main", "meshswap_icon", override=True)
+		sword_icon = get_icon("main", "sword_icon", override=True)
+		effects_icon = get_icon("main", "effects_icon", override=True)
+		entity_icon = get_icon("main", "entity_icon", override=True)
+		model_icon = get_icon("main", "model_icon", override=True)
+			
 
 		all_loaded = props.mob_list and props.meshswap_list and props.item_list
 		if not env.loaded_all_spawners and not all_loaded:
@@ -316,43 +311,25 @@ class MCPREP_MT_3dview_add(bpy.types.Menu):
 			row.alignment = 'CENTER'
 			return
 
-		if spawner_icon is not None:
-			layout.menu(
-				MCPREP_MT_mob_spawner.bl_idname,
-				icon_value=spawner_icon.icon_id)
-		else:
-			layout.menu(MCPREP_MT_mob_spawner.bl_idname)
+		layout.menu(
+			MCPREP_MT_mob_spawner.bl_idname,
+			icon_value=spawner_icon)
 
-		if model_icon is not None:
-			layout.menu(
-				MCPREP_MT_model_spawn.bl_idname, icon_value=model_icon.icon_id)
-		else:
-			layout.menu(MCPREP_MT_model_spawn.bl_idname)
+		layout.menu(
+			MCPREP_MT_model_spawn.bl_idname, icon_value=model_icon)
 
-		if sword_icon is not None:
-			layout.menu(
-				MCPREP_MT_item_spawn.bl_idname, icon_value=sword_icon.icon_id)
-		else:
-			layout.menu(MCPREP_MT_item_spawn.bl_idname)
+		layout.menu(
+			MCPREP_MT_item_spawn.bl_idname, icon_value=sword_icon)
 
-		if effects_icon is not None:
-			layout.menu(
-				MCPREP_MT_effect_spawn.bl_idname, icon_value=effects_icon.icon_id)
-		else:
-			layout.menu(MCPREP_MT_effect_spawn.bl_idname)
+		layout.menu(
+			MCPREP_MT_effect_spawn.bl_idname, icon_value=effects_icon)
 
-		if entity_icon is not None:
-			layout.menu(
-				MCPREP_MT_entity_spawn.bl_idname, icon_value=entity_icon.icon_id)
-		else:
-			layout.menu(MCPREP_MT_entity_spawn.bl_idname)
+		layout.menu(
+			MCPREP_MT_entity_spawn.bl_idname, icon_value=entity_icon)
 
-		if meshswap_icon is not None:
-			layout.menu(
-				MCPREP_MT_meshswap_place.bl_idname,
-				icon_value=meshswap_icon.icon_id)
-		else:
-			layout.menu(MCPREP_MT_meshswap_place.bl_idname)
+		layout.menu(
+			MCPREP_MT_meshswap_place.bl_idname,
+			icon_value=meshswap_icon)
 
 
 def mineways_update(self, context):
@@ -470,7 +447,7 @@ class McprepPreference(bpy.types.AddonPreferences):
 	use_browser_ui: bpy.props.BoolProperty(
 		name="Use New Asset Browser UI",
 		description="Asset browser 3.0+ Only",
-		default=True,
+		default=util.bv30(),
 	)
 
 	# addon updater preferences
@@ -516,6 +493,9 @@ class McprepPreference(bpy.types.AddonPreferences):
 
 		if self.preferences_tab == "settings":
 
+			if util.bv30()
+				row = layout.row()
+				row.prop(self, "use_browser_ui")
 			row = layout.row()
 			row.scale_y = 0.7
 			row.label(text="World Importing & Meshswapping")
@@ -1681,7 +1661,8 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 		if addon_just_updated():
 			restart_layout(self.layout)
 			return
-		row = self.layout.row(align=True)
+		layout = self.layout
+		row = layout.row(align=True)
 		row.label(text="Click triangle to open")
 		ops = row.operator(
 			"mcprep.open_help", text="", icon="QUESTION", emboss=False)
@@ -1689,17 +1670,35 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 		addon_updater_ops.check_for_update_background()
 
 		addon_prefs = util.get_user_preferences()
+		scn_props = context.scene.mcprep_props
 		if addon_prefs.use_browser_ui:
-			spawner_ui.draw_library()
+			col = layout.column()
+			row = col.row(align=True)
+			row.scale_y = 1.2
+			row.prop_enum(scn_props, "browser_tabs", 'BLOCK') 
+			row.prop_enum(scn_props, "browser_tabs", 'ITEM') 
+			row.prop_enum(scn_props, "browser_tabs", 'ENTITY')
+			row = col.row(align=True)
+			row.scale_y = 1.2
+			row.prop_enum(scn_props, "browser_tabs", 'MATERIAL') 
+			
+			# spawner_ui.draw_library()
 
-class MCPREP_PT_mob_spawner(bpy.types.Panel):
+class MCPREP_spawner_main():
+  """A class for other child spawner to inherite"""
+  bl_space_type = "VIEW_3D"
+  bl_region_type = 'UI'
+  bl_category = "MCprep"
+  bl_parent_id = "MCPREP_PT_spawn"
+  bl_options = {'DEFAULT_CLOSED'}
+  
+  @classmethod
+  def poll(cls, context):
+    return not util.get_user_preferences().use_browser_ui
+
+class MCPREP_PT_mob_spawner(bpy.types.Panel, MCPREP_spawner_main):
 	"""MCprep panel for mob spawning"""
 	bl_label = "Mob spawner"
-	bl_parent_id = "MCPREP_PT_spawn"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = 'UI'	
-	bl_category = "MCprep"
-	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
 		if addon_just_updated():
@@ -1712,22 +1711,12 @@ class MCPREP_PT_mob_spawner(bpy.types.Panel):
 		mob_spawner(self, context)
 
 	def draw_header(self, context):
-		if not env.use_icons or env.preview_collections["main"] == "":
-			return
-		icon = env.preview_collections["main"].get("spawner_icon")
-		if not icon:
-			return
-		self.layout.label(text="", icon_value=icon.icon_id)
+		self.layout.label(text="", icon_value=get_icon("main", "spawner_icon"))
 
 
-class MCPREP_PT_model_spawner(bpy.types.Panel):
+class MCPREP_PT_model_spawner(bpy.types.Panel, MCPREP_spawner_main):
 	"""MCprep panel for model/block spawning"""
 	bl_label = "Block (model) spawner"
-	bl_parent_id = "MCPREP_PT_spawn"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = 'UI'
-	bl_category = "MCprep"
-	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
 		if addon_just_updated():
@@ -1740,22 +1729,12 @@ class MCPREP_PT_model_spawner(bpy.types.Panel):
 		model_spawner(self, context)
 
 	def draw_header(self, context):
-		if not env.use_icons or env.preview_collections["main"] == "":
-			return
-		icon = env.preview_collections["main"].get("model_icon")
-		if not icon:
-			return
-		self.layout.label(text="", icon_value=icon.icon_id)
+		self.layout.label(text="", icon_value=get_icon("main", "model_icon"))
 
 
-class MCPREP_PT_item_spawner(bpy.types.Panel):
+class MCPREP_PT_item_spawner(bpy.types.Panel, MCPREP_spawner_main):
 	"""MCprep panel for item spawning"""
 	bl_label = "Item spawner"
-	bl_parent_id = "MCPREP_PT_spawn"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = 'UI'
-	bl_category = "MCprep"
-	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
 		if addon_just_updated():
@@ -1769,22 +1748,12 @@ class MCPREP_PT_item_spawner(bpy.types.Panel):
 		item_spawner(self, context)
 
 	def draw_header(self, context):
-		if not env.use_icons or env.preview_collections["main"] == "":
-			return
-		icon = env.preview_collections["main"].get("sword_icon")
-		if not icon:
-			return
-		self.layout.label(text="", icon_value=icon.icon_id)
+		self.layout.label(text="", icon_value=get_icon("main", "sword_icon"))
 
 
-class MCPREP_PT_effects_spawner(bpy.types.Panel):
+class MCPREP_PT_effects_spawner(bpy.types.Panel, MCPREP_spawner_main):
 	"""MCprep panel for effects spawning"""
 	bl_label = "Effects + weather"
-	bl_parent_id = "MCPREP_PT_spawn"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = 'UI'
-	bl_category = "MCprep"
-	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
 		if addon_just_updated():
@@ -1797,22 +1766,12 @@ class MCPREP_PT_effects_spawner(bpy.types.Panel):
 		effects_spawner(self, context)
 
 	def draw_header(self, context):
-		if not env.use_icons or env.preview_collections["main"] == "":
-			return
-		icon = env.preview_collections["main"].get("effects_icon")
-		if not icon:
-			return
-		self.layout.label(text="", icon_value=icon.icon_id)
+		self.layout.label(text="", icon_value=get_icon("main", "effects_icon"))
 
 
-class MCPREP_PT_entity_spawner(bpy.types.Panel):
+class MCPREP_PT_entity_spawner(bpy.types.Panel, MCPREP_spawner_main):
 	"""MCprep panel for entity spawning"""
 	bl_label = "Entity spawner"
-	bl_parent_id = "MCPREP_PT_spawn"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = 'UI'
-	bl_category = "MCprep"
-	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
 		if addon_just_updated():
@@ -1825,22 +1784,12 @@ class MCPREP_PT_entity_spawner(bpy.types.Panel):
 		entity_spawner(self, context)
 
 	def draw_header(self, context):
-		if not env.use_icons or env.preview_collections["main"] == "":
-			return
-		icon = env.preview_collections["main"].get("entity_icon")
-		if not icon:
-			return
-		self.layout.label(text="", icon_value=icon.icon_id)
+		self.layout.label(text="", icon_value=get_icon("main", "entity_icon"))
 
 
-class MCPREP_PT_meshswap_spawner(bpy.types.Panel):
+class MCPREP_PT_meshswap_spawner(bpy.types.Panel, MCPREP_spawner_main):
 	"""MCprep panel for meshswap spawning"""
 	bl_label = "Meshswap spawner"
-	bl_parent_id = "MCPREP_PT_spawn"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = 'UI'
-	bl_category = "MCprep"
-	bl_options = {'DEFAULT_CLOSED'}
 
 	def draw(self, context):
 		if addon_just_updated():
@@ -1853,12 +1802,7 @@ class MCPREP_PT_meshswap_spawner(bpy.types.Panel):
 		meshswap_spawner(self, context)
 
 	def draw_header(self, context):
-		if not env.use_icons or env.preview_collections["main"] == "":
-			return
-		icon = env.preview_collections["main"].get("meshswap_icon")
-		if not icon:
-			return
-		self.layout.label(text="", icon_value=icon.icon_id)
+		self.layout.label(text="", icon_value=get_icon("main","meshswap_icon"))
 
 
 # -----------------------------------------------------------------------------
@@ -1870,12 +1814,7 @@ class MCPREP_PT_meshswap_spawner(bpy.types.Panel):
 def draw_mcprepadd(self, context):
 	"""Append to Shift+A, icon for top-level MCprep section."""
 	layout = self.layout
-	pcoll = env.preview_collections["main"]
-	if pcoll != "":
-		my_icon = pcoll["crafting_icon"]
-		layout.menu(MCPREP_MT_3dview_add.bl_idname, icon_value=my_icon.icon_id)
-	else:
-		layout.menu(MCPREP_MT_3dview_add.bl_idname)
+	layout.menu(MCPREP_MT_3dview_add.bl_idname, icon_value=get_icon("main", "crafting_icon", override = True))
 
 
 def mcprep_uv_tools(self, context):
@@ -1903,17 +1842,10 @@ def mcprep_image_tools(self, context):
 		txt = "Spawn as item"
 	if not img:
 		row.enabled = False
-	if env.preview_collections["main"] != "":
-		sword_icon = env.preview_collections["main"]["sword_icon"]
-	else:
-		sword_icon = None
 
-	if sword_icon:
-		row.operator(
-			"mcprep.spawn_item", text=txt,
-			icon_value=sword_icon.icon_id).filepath = path
-	else:
-		row.operator("mcprep.spawn_item", text=txt).filepath = path
+	row.operator(
+		"mcprep.spawn_item", text=txt,
+		icon_value=get_icon("main", "sword_icon", override=True)).filepath = path
 
 
 # -----------------------------------------------
@@ -1921,7 +1853,7 @@ def mcprep_image_tools(self, context):
 # -----------------------------------------------
 
 
-class McprepProps(bpy.types.PropertyGroup):
+class McprepProps(bpy.types.PropertyGroup, McprepMaterialProps):
 	"""Properties saved to an individual scene"""
 
 	# not available here
@@ -1948,15 +1880,18 @@ class McprepProps(bpy.types.PropertyGroup):
 		name="show effect settings",
 		description="Show extra MCprep panel settings",
 		default=False)
-	browser_tab_category: bpy.props.EnumProperty(
-		name="Browser tab category",
+	
+	# Asset browser 
+	browser_tabs: bpy.props.EnumProperty(
+		name="Browser tabs category",
 		description="",
 		items=[
-			('BLOCK', 'Block', 'Show mob spawner'),
-			('ENTITY', 'Entity', 'Show model (block) spawner'),
-			('ITEM', 'Item', 'Show item spawner'),
-			('MATERIAL', 'Material', 'Show entity spawner')]
+			('BLOCK', "Block", "Block spawner", get_icon("main", "model_icon"), 0),
+			('ENTITY', "Entity", "Entity Mob rigs spawn", get_icon("main", "entity_icon"), 1)
+			('ITEM', "Item", "Show item spawner", get_icon("main", "sword_icon"), 2),
+			('MATERIAL', 'Material', "Prep Material", get_icon("", "SHADING_TEXTURE"), 3)]
 	)
+	# Inherited prep material settings
 
 	# Rig settings
 	spawn_rig_category: bpy.props.EnumProperty(
