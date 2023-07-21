@@ -37,12 +37,12 @@ class MCPREP_WM_Props(PropertyGroup):
         return spawner_util.get_active_library(context)
 
     def get_active_asset(self,context):
-        workspace = context.workspace.home_builder
+        workspace = context.workspace.mcprep_props
         return self.library_assets[workspace.library_index]
 
 """
+This is in place at mcprep_ui
 class MCPREP_SCN_Props():
-
     spawner_tabs: EnumProperty(
       name="Spawner Tabs",
       items=[
@@ -58,12 +58,12 @@ class MCPREP_SCN_Props():
     def update_spawner(self, context):
         prefs = context.preferences
         asset_lib = prefs.filepaths.asset_libraries.get(MCPREP_ASSET_LIBRARY)
-        library = hb_utils.get_active_library(context)
+        library =spawner_util.get_active_library(context)
         if library:
             asset_lib.path = library.library_path
     
             for workspace in bpy.data.workspaces:
-                workspace.asset_library_ref = "home_builder_library"
+                workspace.asset_library_ref = "mcprep-library"
             
             if bpy.ops.asset.library_refresh.poll():
                 bpy.ops.asset.library_refresh()
@@ -76,7 +76,7 @@ classes = (
 
 def register():
   bpy.types.WorkSpace.mcprep_props = PointerProperty(
-    type=MCPREL_Workspace_Props
+    type=MCPREP_Workspace_Props
   )
   bpy.types.WindowManager.mcprep_props = PointerProperty(
     type=MCPREP_WM_Props,

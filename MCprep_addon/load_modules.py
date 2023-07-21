@@ -147,6 +147,15 @@ if "generate" in locals():
 else:
 	from .materials import generate
 
+if "spawner_props" in locals():
+	importlib.reload(spawner_props)
+else:
+	from .browser import spawner_props
+
+if "spawner_op" in locals():
+	importlib.reload(spawner_op)
+else:
+	from .browser import spawner_op
 
 # Only include those with a register function, which is not all
 module_list = (
@@ -167,7 +176,10 @@ module_list = (
 	world_tools,
 	# bridge,
 	mcprep_ui,
-	optimize_scene
+	optimize_scene,
+	# asset
+	spawner_props,
+	spawner_op
 )
 
 
