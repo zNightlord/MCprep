@@ -41,6 +41,7 @@ from .spawner import meshswap
 from .spawner import mobs
 from .spawner import spawn_util
 from .browser import spawner_ui
+from .browser.spawner_props import MCPREP_SCN_Props
 from .conf import env
 # from .import_bridge import bridge
 
@@ -1851,7 +1852,7 @@ def mcprep_image_tools(self, context):
 # -----------------------------------------------
 # Addon wide properties (aside from user preferences)
 # -----------------------------------------------
-
+MCPREP_ASSET_LIBRARY = 'mcprep_asset_library'
 
 class McprepProps(bpy.types.PropertyGroup, McprepMaterialProps):
 	"""Properties saved to an individual scene"""
@@ -1882,6 +1883,19 @@ class McprepProps(bpy.types.PropertyGroup, McprepMaterialProps):
 		default=False)
 	
 	# Asset browser 
+  def update_spawner(self, context):
+    prefs = context.preferences
+    asset_lib = prefs.filepaths.asset_libraries.get(MCPREP_ASSET_LIBRARY)
+    library = hb_utils.get_active_library(context)
+    if library:
+      asset_lib.path = library.library_path
+    
+      for workspace in bpy.data.workspaces:
+        workspace.asset_library_ref = "mcprep-library"
+            
+      if bpy.ops.asset.library_refresh.poll():
+        bpy.ops.asset.library_refresh()
+                
 	browser_tabs: bpy.props.EnumProperty(
 		name="Browser tabs category",
 		description="",
@@ -1889,7 +1903,10 @@ class McprepProps(bpy.types.PropertyGroup, McprepMaterialProps):
 			('BLOCK', "Block", "Block spawner", get_icon("main", "model_icon"), 0),
 			('ENTITY', "Entity", "Entity Mob rigs spawn", get_icon("main", "entity_icon"), 1)
 			('ITEM', "Item", "Show item spawner", get_icon("main", "sword_icon"), 2),
-			('MATERIAL', 'Material', "Prep Material", get_icon("", "SHADING_TEXTURE"), 3)]
+			('MATERIAL', 'Material', "Prep Material", get_icon("", "SHADING_TEXTURE"), 3),
+			# Extended
+			('SKIN', 'Skin', "Skin", get_icon("", "SHADING_TEXTURE"), 4)
+			]
 	)
 	# Inherited prep material settings
 

@@ -1,14 +1,48 @@
-MCPREP_ASSET_LIBRARY = 'mcprep_asset_library'
+import bpy
+from bpy.props import StringProperty,EnumProperty,CollectionProperty,BoolProperty
+from bpy.types import AssetHandle, PropertyGroup
 
 class MCPREL_Workspace_Props(PropertyGroup):  
     library_index: bpy.props.IntProperty()
 
+class Asset_Library(PropertyGroup):
+    library_type: StringProperty(name="Library Type")
+    library_path: StringProperty(name="Library Path")
+    library_menu_ui: StringProperty(name="Library Settings UI")
+    activate_id: StringProperty(name="Activate ID")
+    drop_id: StringProperty(name="Drop ID")
+    enabled: BoolProperty(name="Enabled",default=True)
+
+class Library_Package(PropertyGroup):
+    enabled: BoolProperty(name="Enabled",default=True)
+    expand: BoolProperty(name="Expand",default=False)
+    package_path: StringProperty(name="Package Path",subtype='DIR_PATH',update=update_library_package_path)
+    asset_libraries: bpy.props.CollectionProperty(type=Asset_Library)
+
 class MCPREP_WM_Props(PropertyGroup):
-  library_assets: bpy.props.CollectionProperty(
-    type=bpy.types.AssetHandle,
-    description="Current Set of Assets In Asset Browser"
-  )
-class MCPREP_SCN_Props(PropertyGroup):
+    library_assets: bpy.props.CollectionProperty(
+        type=AssetHandle,
+        description="Current Set of Assets In Asset Browser"
+    )
+  
+    asset_libraries: bpy.props.(
+        type=Asset_Library,
+        description="Collection of all asset libraries loaded")
+  
+    library_packages: bpy.props.CollectionProperty(
+      type=Library_Package,
+      description="Collection of all external asset packages loaded into Home Builder")
+      
+    def get_active_library(self,context):
+        return spawner_util.get_active_library(context)
+
+    def get_active_asset(self,context):
+        workspace = context.workspace.home_builder
+        return self.library_assets[workspace.library_index]
+
+"""
+class MCPREP_SCN_Props():
+
     spawner_tabs: EnumProperty(
       name="Spawner Tabs",
       items=[
@@ -33,7 +67,13 @@ class MCPREP_SCN_Props(PropertyGroup):
             
             if bpy.ops.asset.library_refresh.poll():
                 bpy.ops.asset.library_refresh()
+                """
+               
+classes = (
+  
+)
                 
+
 def register():
   bpy.types.WorkSpace.mcprep_props = PointerProperty(
     type=MCPREL_Workspace_Props
