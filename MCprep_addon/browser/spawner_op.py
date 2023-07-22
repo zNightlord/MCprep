@@ -1,3 +1,5 @@
+import os
+
 import bpy
 from pathlib import Path
 import math
@@ -54,7 +56,7 @@ class MCPREP_OT_reload_library(bpy.types.Operator):
 
 class MCPREP_OT_assign_material_dialog(bpy.types.Operator):
     """Rather like the classic prep material"""
-    bl_idname = "home_builder.assign_material_dialog"
+    bl_idname = "asailder.assign_material_dialog"
     bl_label = "Assign Material Dialog"
     bl_description = "This is a dialog to assign materials to Home Builder objects"
     bl_options = {'UNDO'}
@@ -78,12 +80,12 @@ class MCPREP_OT_assign_material_dialog(bpy.types.Operator):
         
     def draw(self,context):
         scene_props = context.scene.mcprep_props
-        # obj_props = home_builder_utils.get_object_props(self.obj)
+        # obj_props = asailder_utils.get_object_props(self.obj)
         layout = self.layout
         box = layout.box()
         row = box.row()
         row.label(text=self.obj.name,icon='OBJECT_DATA')
-        ops = row.operator('home_builder.assign_material_to_all_slots',text="Prep All",icon='DOWNARROW_HLT')
+        ops = row.operator('asailder.assign_material_to_all_slots',text="Prep All",icon='DOWNARROW_HLT')
         ops.object_name = self.obj.name
         ops.material_name = self.material.name
 
@@ -112,7 +114,7 @@ class MCPREP_OT_assign_material_dialog(bpy.types.Operator):
             if pointer and pointer.pointer_name not in pointer_list and pointer.pointer_name != "":
                 pointer_list.append(pointer.pointer_name)
 
-            ops = row.operator('home_builder.assign_material_to_slot',text="Override",icon='BACK')
+            ops = row.operator('asailder.assign_material_to_slot',text="Override",icon='BACK')
             ops.object_name = self.obj.name
             ops.material_name = self.material.name
             ops.index = index
@@ -125,7 +127,7 @@ class MCPREP_OT_assign_material_dialog(bpy.types.Operator):
                 row = box.split(factor=.80)
                 mat_pointer = scene_props.material_pointers[pointer] 
                 row.label(text=pointer + ": " + mat_pointer.category_name + "/" + mat_pointer.material_name)    
-                ops = row.operator('home_builder.assign_material_to_pointer',text="Update All",icon='FILE_REFRESH')
+                ops = row.operator('asailder.assign_material_to_pointer',text="Update All",icon='FILE_REFRESH')
                 ops.pointer_name = pointer
         
     def execute(self,context):
@@ -146,7 +148,7 @@ class MCPREP_OT_DropMaterial(bpy.types.Operator):
         return True
         
     def execute(self, context):
-        self.region = pc_utils.get_3d_view_region(context)
+        self.region = spawner_util.get_3d_view_region(context)
         self.mat = self.get_material(context)
         context.window_manager.modal_handler_add(self)
         context.area.tag_redraw()
@@ -181,7 +183,7 @@ class MCPREP_OT_DropMaterial(bpy.types.Operator):
 
                 if len(selected_obj.material_slots) > 1:
                     print(self.mat,selected_obj)
-                    bpy.ops.home_builder.assign_material_dialog('INVOKE_DEFAULT',material_name = self.mat.name, object_name = selected_obj.name)
+                    bpy.ops.asailder.assign_material_dialog('INVOKE_DEFAULT',material_name = self.mat.name, object_name = selected_obj.name)
                     return self.finish(context)
                 else:
                     for slot in selected_obj.material_slots:
@@ -243,7 +245,7 @@ class MCPREP_OT_DropBlock(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def get_object(self,context):
-        wm_props = context.window_manager.home_builder
+        wm_props = context.window_manager.asailder
         library = wm_props.get_active_library(context)
         asset = wm_props.get_active_asset(context)   
         path = os.path.join(os.path.dirname(library.library_path),'assets',asset.file_data.name + ".blend")
@@ -331,12 +333,12 @@ class MCPREP_OT_DropBlock(bpy.types.Operator):
             self.set_placed_properties(obj) 
         context.area.tag_redraw()
         if is_recursive:
-            bpy.ops.home_builder.drop_decoration(filepath=self.filepath)
+            bpy.ops.asailder.drop_decoration(filepath=self.filepath)
         return {'FINISHED'}
 
 
-class home_builder_OT_drop_build_library(bpy.types.Operator):
-    bl_idname = "home_builder.drop_build_library"
+class asailder_OT_drop_build_library(bpy.types.Operator):
+    bl_idname = "asailder.drop_build_library"
     bl_label = "Drop Build Library"
     bl_options = {'UNDO'}
     
@@ -363,7 +365,7 @@ class home_builder_OT_drop_build_library(bpy.types.Operator):
         self.all_objects = []
 
     def execute(self, context):
-        self.region = pc_utils.get_3d_view_region(context)
+        self.region = spawner_util.get_3d_view_region(context)
         self.reset_properties()
         self.create_drawing_plane(context)
         self.get_asset(context)
@@ -372,7 +374,7 @@ class home_builder_OT_drop_build_library(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def get_asset(self,context):
-        wm_props = context.window_manager.home_builder
+        wm_props = context.window_manager.asailder
         library = wm_props.get_active_library(context)
         asset = wm_props.get_active_asset(context)
         path = os.path.join(os.path.dirname(library.library_path),'assets',asset.file_data.name + ".blend")
@@ -404,26 +406,26 @@ class home_builder_OT_drop_build_library(bpy.types.Operator):
 
         self.position_object(selected_point,selected_obj)
 
-        if pc_placement_utils.event_is_place_asset(event):
+        if spawner_util.event_is_place_asset(event):
             return self.finish(context,event.shift)
             
-        if pc_placement_utils.event_is_cancel_command(event):
+        if spawner_util.event_is_cancel_command(event):
             return self.cancel_drop(context)
 
-        if pc_placement_utils.event_is_pass_through(event):
+        if spawner_util.event_is_pass_through(event):
             return {'PASS_THROUGH'}
 
         return {'RUNNING_MODAL'}
 
     def position_object(self,selected_point,selected_obj):
-        wall_bp = pc_utils.get_bp_by_tag(selected_obj,'IS_WALL_BP')
-        cabinet_bp = pc_utils.get_bp_by_tag(selected_obj,'IS_CABINET_BP')
+        wall_bp = spawner_util.get_bp_by_tag(selected_obj,'IS_WALL_BP')
+        cabinet_bp = spawner_util.get_bp_by_tag(selected_obj,'IS_CABINET_BP')
         if cabinet_bp:
-            cabinet = pc_types.Assembly(cabinet_bp)
-            pc_placement_utils.position_assembly_next_to_cabinet(self.assembly,cabinet,selected_point)
+            cabinet = spawner_util.Assembly(cabinet_bp)
+            spawner_util.position_assembly_next_to_cabinet(self.assembly,cabinet,selected_point)
         elif wall_bp:
             wall = pc_types.Assembly(wall_bp)
-            pc_placement_utils.position_assembly_on_wall(self.assembly,wall,selected_point,(0,0,0),self.z_loc)
+            spawner_util.position_assembly_on_wall(self.assembly,wall,selected_point,(0,0,0),self.z_loc)
         else:
             for obj, location in self.parent_obj_dict.items():
                 obj.location = selected_point
@@ -436,7 +438,7 @@ class home_builder_OT_drop_build_library(bpy.types.Operator):
         obj_list.append(self.drawing_plane)
         for obj in self.all_objects:
             obj_list.append(obj)
-        pc_utils.delete_obj_list(obj_list)
+        spawner_util.delete_obj_list(obj_list)
         return {'CANCELLED'}
 
     def create_drawing_plane(self,context):
@@ -451,7 +453,7 @@ class home_builder_OT_drop_build_library(bpy.types.Operator):
         context.window.cursor_set('DEFAULT')
         bpy.ops.object.select_all(action='DESELECT')
         if self.drawing_plane:
-            pc_utils.delete_obj_list([self.drawing_plane])
+            spawner_util.delete_obj_list([self.drawing_plane])
         bpy.ops.object.select_all(action='DESELECT')
         for obj, location in self.parent_obj_dict.items():
             obj.select_set(True)  
@@ -462,13 +464,13 @@ class home_builder_OT_drop_build_library(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class home_builder_OT_lookup_drop_id(bpy.types.Operator):
-    bl_idname = "home_builder.lookup_drop_id"
+class asailder_OT_lookup_drop_id(bpy.types.Operator):
+    bl_idname = "asailder.lookup_drop_id"
     bl_label = "Lookup Drop ID"
     bl_options = {'UNDO'}
 
     def execute(self, context):
-        wm_props = context.window_manager.home_builder
+        wm_props = context.window_manager.asailder
         asset = wm_props.get_active_asset(context)
         for tag in asset.file_data.asset_data.tags:
             if "drop_id:" in tag.name:

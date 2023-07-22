@@ -250,21 +250,15 @@ def load_libraries(context):
     product_path = get_product_library_path()
 
     prefs = context.preferences
-    asset_lib = prefs.filepaths.asset_libraries.get("home_builder_library")
+    asset_lib = prefs.filepaths.asset_libraries.get("mcprep-library")
 
     if not asset_lib:
         bpy.ops.preferences.asset_library_add()
         asset_lib = prefs.filepaths.asset_libraries[-1]
         asset_lib.name = "mcprep-library"
-    #     asset_lib.path = os.path.join(os.path.dirname(__file__),'asset_libraries','sample_cabinets','library','Sample Cabinets')
-    # else:
-    #     asset_lib.name = "home_builder_library"
-    #     asset_lib.path = os.path.join(os.path.dirname(__file__),'asset_libraries','sample_cabinets','library','Sample Cabinets')        
 
-    # for workspace in bpy.data.workspaces:
-    #     workspace.asset_library_ref = "home_builder_library"
 
-    wm_props = context.window_manager.home_builder
+    wm_props = context.window_manager.asailder
     
     for lib in wm_props.asset_libraries:
         wm_props.asset_libraries.remove(0)
