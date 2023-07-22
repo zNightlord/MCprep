@@ -43,7 +43,6 @@ from .spawner import meshswap
 from .spawner import mobs
 from .spawner import spawn_util
 from .browser import spawner_ui
-from .browser.spawner_props import MCPREP_SCN_Props
 from .conf import env
 # from .import_bridge import bridge
 
@@ -111,24 +110,31 @@ def restart_layout(layout):
 		icon="ERROR")
 	col.label(text="to complete update")
 
+icon_ref = {}
 
 def get_icon(section:Union[str,IconType], icon_name:str, override:bool = False, not_found:str = 'NONE'):
-  """
-  section: (main, mobs, item, effect)
-  override for parts that need icon to be on
-  """
-  use_icons = not env.use_icons or override
-  icon = None
-  if use_icons or env.preview_collections[section] != "":
-    icon = env.preview_collections[section].get(icon_name)
-  if not icon:
-    icons = bpy.types.UILayout.bl_rna.functions["prop"].parameters["icon"].enum_items.keys()
-      
-    icon_ref = {k : i for i, k in enumerate(icons)}
-      
-    return icon_ref[not_found]
-    
-  return icon.icon_id
+	"""
+	section: (main, mobs, item, effect)
+	override for parts that need icon to be on
+	"""
+	use_icons = not env.use_icons or override
+	icon = None
+	if section != "":
+		if use_icons or env.preview_collections[section] != "":
+			icon = env.preview_collections[section].get(icon_name)
+	if not icon:
+		icons = bpy.types.UILayout.bl_rna.functions["prop"].parameters["icon"].enum_items.keys()
+
+		for i, k in enumerate(icons):
+			icon_ref[k] = i
+
+		icon = icon_ref.get(icon_name)
+		if icon:
+			return icon + 9
+		else:
+			return icon_ref[not_found]
+		
+	return icon.icon_id
   
 def advanced_material(layout, context, **kwargs):
 	box = layout.box()
@@ -1721,19 +1727,22 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 			library = wm_props.get_active_library(context)
 			
 			col = layout.column()
-			col.prop(scn_props, "show_settings_asset", icon = get_icon("", "PREFERENCES"))
-			if scn_props.browser_tabs == 'BLOCK':
-				advanced_model(col)
-				advanced_meshswap(col)
-			elif scn_props.browser_tabs == 'ITEM':
-				advanced_item(col)
-			elif scn_props.browser_tabs == 'ENTITY':
-				advanced_entity(col)
-				advanced_mob(col)
-			elif scn_props.browser_tabs == 'MATERIAL':
-				advanced_material(col, context)
+			col.prop(scn_props, "show_settings_asset", 
+	    		text = "",icon_value = 108 ) # get_icon("", "PREFERENCES")
+			if scn_props.show_settings_asset:
+				if scn_props.browser_tabs == 'BLOCK':
+					advanced_model(col, context)
+					advanced_meshswap(col, context)
+				elif scn_props.browser_tabs == 'ITEM':
+					advanced_item(col, context)
+				elif scn_props.browser_tabs == 'ENTITY':
+					advanced_entity(col,context)
+					advanced_mob(col, context)
+				elif scn_props.browser_tabs == 'MATERIAL':
+					advanced_material(col, context)
 
 			col.separator()
+			col = col.column(align=True)
 			row = col.row(align=True)
 			row.scale_y = 1.2
 			row.prop_enum(scn_props, "browser_tabs", 'BLOCK') 
@@ -1742,7 +1751,7 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 			row = col.row(align=True)
 			row.scale_y = 1.2
 			row.prop_enum(scn_props, "browser_tabs", 'MATERIAL') 
-			
+			col.separator()
 			spawner_ui.draw_library(col, context, library)
 
 class MCPREP_spawner_main():
@@ -1966,12 +1975,12 @@ class McprepProps(bpy.types.PropertyGroup, McprepMaterialProps):
 		description="",
 		items=[
 		('BLOCK', "Block", "Block spawner", get_icon("main", "model_icon"), 0),
-		('ENTITY', "Entity", "Entity Mob rigs spawner", get_icon("main", "entity_icon"), 1)
+		('ENTITY', "Entity", "Entity Mob rigs spawner", get_icon("main", "entity_icon"), 1),
 		('ITEM', "Item", "Item spawner", get_icon("main", "sword_icon"), 2),
-		('MATERIAL', 'Material', "Prep Material", get_icon("", "SHADING_TEXTURE"), 3),
+		('MATERIAL', 'Material', "Prep Material", 110, 3), #  get_icon("", "SHADING_TEXTURE")
 		# Extended
-		('SKIN', 'Skin', "Skin swapper", get_icon("", "SHADING_TEXTURE"), 4)
-		('POSE', 'Pose', "Pose and Animation", get_icon("", "SHADING_TEXTURE"), 4)
+		('SKIN', 'Skin', "Skin swapper", 0, 4),
+		('POSE', 'Pose', "Pose and Animation", 0, 5)
 				]
 		)
 	# Inherited prep material settings

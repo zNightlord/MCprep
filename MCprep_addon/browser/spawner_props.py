@@ -1,9 +1,29 @@
 import bpy
-from bpy.props import StringProperty,EnumProperty,CollectionProperty,BoolProperty
+from bpy.props import (
+  StringProperty, EnumProperty, BoolProperty, IntProperty,
+  CollectionProperty, PointerProperty
+)
 from bpy.types import AssetHandle, PropertyGroup
 
-class MCPREL_Workspace_Props(PropertyGroup):  
-    library_index: bpy.props.IntProperty(name = "Library Index")
+from . import spawner_util
+
+def update_library_path(self, context):
+  print("TODO")
+
+class MCPREP_Workspace_Props(PropertyGroup):  
+  library_index: IntProperty(name="Library Index")
+
+  @classmethod
+  def register(cls):
+    bpy.types.WorkSpace.mcprep_props = PointerProperty(
+      name="Home Builder Props",
+      description="Home Builder Props",
+      type=cls
+    )
+
+  @classmethod
+  def unregister(cls):
+    del bpy.types.WorkSpace.mcprep_props
 
 class Asset_Library(PropertyGroup):
     library_type: StringProperty(name="Library Type")
@@ -11,33 +31,47 @@ class Asset_Library(PropertyGroup):
     library_menu_ui: StringProperty(name="Library Settings UI")
     activate_id: StringProperty(name="Activate ID")
     drop_id: StringProperty(name="Drop ID")
-    enabled: BoolProperty(name="Enabled",default=True)
+    enabled: BoolProperty(name="Enabled", default=True)
 
 class Library_Package(PropertyGroup):
-    enabled: BoolProperty(name="Enabled",default=True)
-    expand: BoolProperty(name="Expand",default=False)
-    package_path: StringProperty(name="Package Path",subtype='DIR_PATH',update=update_library_package_path)
-    asset_libraries: bpy.props.CollectionProperty(type=Asset_Library)
+  enabled: BoolProperty(name="Enabled", default=True)
+  expand: BoolProperty(name="Expand", default=False)
+  package_path: StringProperty(
+    name="Package Path", subtype='DIR_PATH',
+    update=update_library_path)
+  asset_libraries: CollectionProperty(type=Asset_Library)
 
 class MCPREP_WM_Props(PropertyGroup):
-    library_assets: bpy.props.CollectionProperty(
-        type=AssetHandle,
-        description="Current Set of assets In Asset Browser")
-  
-    asset_libraries: bpy.props.(
-        type=Asset_Library,
-        description="Collection of all asset libraries loaded")
-  
-    library_packages: bpy.props.CollectionProperty(
-      type=Library_Package,
-      description="Collection of all external asset libraries loaded")
-      
-    def get_active_library(self,context):
-        return spawner_util.get_active_library(context)
+  library_assets: CollectionProperty(
+    type=AssetHandle,
+    description="Current Set of assets In Asset Browser")
 
-    def get_active_asset(self,context):
-        workspace = context.workspace.mcprep_props
-        return self.library_assets[workspace.library_index]
+  asset_libraries: CollectionProperty(
+    type=Asset_Library,
+    description="Collection of all asset libraries loaded")
+
+  library_packages: CollectionProperty(
+    type=Library_Package,
+    description="Collection of all external asset libraries loaded")
+    
+  def get_active_library(self,context):
+    return spawner_util.get_active_library(context)
+
+  def get_active_asset(self,context):
+    workspace = context.workspace.mcprep_props
+    return self.library_assets[workspace.library_index]
+    
+
+  @classmethod
+  def register(cls):
+    bpy.types.WindowManager.mcprep_props = PointerProperty(
+    type=cls,
+    )
+
+  @classmethod
+  def unregister(cls):
+    del bpy.types.WindowManager.mcprep_props
+    
 
 """
 This is in place at mcprep_ui
@@ -72,27 +106,16 @@ class MCPREP_SCN_Props():
 classes = (
   Asset_Library,
   Library_Package,
+  MCPREP_Workspace_Props,
+  MCPREP_WM_Props
 )
 
 def register():
   for cls in classes:
     bpy.utils.register_class(cls)
   
-  bpy.types.WorkSpace.mcprep_props = PointerProperty(
-    type=MCPREP_Workspace_Props
-  )
-  bpy.types.WindowManager.mcprep_props = PointerProperty(
-    type=MCPREP_WM_Props,
-  )
-  bpy.types.Scene.scn_props = PointerProperty(
-    type=MCPREP_SCN_Props
-  )
+  
 
 def unregister():
   for cls in reversed(classes):
     bpy.utils.unregister_class(cls)
-  
-  del bpy.types.WorkSpace.mcprep_props
-  del bpy.types.WindowManager.mcprep_props
-  del bpy.types.Scene.scn_props
-  
