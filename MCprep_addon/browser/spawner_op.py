@@ -477,23 +477,7 @@ class home_builder_OT_lookup_drop_id(bpy.types.Operator):
         return {'FINISHED'}
 
 classes = (
-    home_builder_OT_drop_material,
-    home_builder_OT_drop_decoration,
-    home_builder_OT_drop_build_library,
-    home_builder_OT_lookup_drop_id,
-)
-
-register, unregister = bpy.utils.register_classes_factory(classes)
-
-if __name__ == "__main__":
-    register()        
-    
-classes = (
-	MCPREP_OT_reload_mobs,
-	MCPREP_OT_mob_spawner,
-	MCPREP_OT_install_mob,
-	MCPREP_OT_uninstall_mob,
-	MCPREP_OT_install_mob_icon
+	MCPREP_OT_reload_library,
 )
 
 

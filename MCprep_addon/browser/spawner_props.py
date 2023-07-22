@@ -3,7 +3,7 @@ from bpy.props import StringProperty,EnumProperty,CollectionProperty,BoolPropert
 from bpy.types import AssetHandle, PropertyGroup
 
 class MCPREL_Workspace_Props(PropertyGroup):  
-    library_index: bpy.props.IntProperty()
+    library_index: bpy.props.IntProperty(name = "Library Index")
 
 class Asset_Library(PropertyGroup):
     library_type: StringProperty(name="Library Type")
@@ -22,8 +22,7 @@ class Library_Package(PropertyGroup):
 class MCPREP_WM_Props(PropertyGroup):
     library_assets: bpy.props.CollectionProperty(
         type=AssetHandle,
-        description="Current Set of Assets In Asset Browser"
-    )
+        description="Current Set of assets In Asset Browser")
   
     asset_libraries: bpy.props.(
         type=Asset_Library,
@@ -31,7 +30,7 @@ class MCPREP_WM_Props(PropertyGroup):
   
     library_packages: bpy.props.CollectionProperty(
       type=Library_Package,
-      description="Collection of all external asset packages loaded into Home Builder")
+      description="Collection of all external asset libraries loaded")
       
     def get_active_library(self,context):
         return spawner_util.get_active_library(context)
@@ -67,14 +66,18 @@ class MCPREP_SCN_Props():
             
             if bpy.ops.asset.library_refresh.poll():
                 bpy.ops.asset.library_refresh()
-                """
-               
+
+"""
+
 classes = (
-  
+  Asset_Library,
+  Library_Package,
 )
-                
 
 def register():
+  for cls in classes:
+    bpy.utils.register_class(cls)
+  
   bpy.types.WorkSpace.mcprep_props = PointerProperty(
     type=MCPREP_Workspace_Props
   )
@@ -86,6 +89,9 @@ def register():
   )
 
 def unregister():
+  for cls in reversed(classes):
+    bpy.utils.unregister_class(cls)
+  
   del bpy.types.WorkSpace.mcprep_props
   del bpy.types.WindowManager.mcprep_props
   del bpy.types.Scene.scn_props
