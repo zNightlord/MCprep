@@ -159,6 +159,7 @@ else:
 
 # Only include those with a register function, which is not all
 module_list = (
+	conf,
 	util_operators,
 	material_manager,
 	prep,
