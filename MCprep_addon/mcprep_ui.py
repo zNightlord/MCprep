@@ -1700,7 +1700,10 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 
 		addon_prefs = util.get_user_preferences()
 		scn_props = context.scene.mcprep_props
+		wm_props = context.window_manager.mcprep_props
 		if addon_prefs.use_browser_ui:
+			library = wm_props.get_active_library(context)
+			
 			col = layout.column()
 			col.prop(scn_props, "show_settings_asset", icon = get_icon("", "PREFERENCES"))
 			if scn_props.browser_tabs == 'BLOCK':
@@ -1724,7 +1727,7 @@ class MCPREP_PT_spawn(bpy.types.Panel):
 			row.scale_y = 1.2
 			row.prop_enum(scn_props, "browser_tabs", 'MATERIAL') 
 			
-			spawner_ui.draw_library()
+			spawner_ui.draw_library(col, context, library)
 
 class MCPREP_spawner_main():
   """A class for other child spawner to inherite"""
