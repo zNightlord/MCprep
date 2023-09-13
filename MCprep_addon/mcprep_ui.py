@@ -40,7 +40,6 @@ from .spawner import mobs
 from .spawner import spawn_util
 from .conf import env
 # from .import_bridge import bridge
-
 # blender 2.8 icon selections
 LOAD_FACTORY = 'LOOP_BACK'
 HAND_ICON = 'FILE_REFRESH'
@@ -99,10 +98,10 @@ def restart_layout(layout):
 		icon="ERROR")
 	col.label(text="to complete update")
 
-
 # -----------------------------------------------------------------------------
 # UI class functions
 # -----------------------------------------------------------------------------
+
 
 class MCPREP_MT_mob_spawner(bpy.types.Menu):
 	"""Shift-A menu in the 3D view"""
@@ -367,6 +366,28 @@ def feature_set_update(self, context: Context) -> None:
 	tracking.Tracker.feature_set = self.feature_set
 	tracking.trackUsage("feature_set", param=self.feature_set)
 
+def ShowMessageBox(messages:Union[Tuple[str], str] = "", title = "Message Box", icon = 'INFO'):
+	def draw(self, context):
+		if isinstance(message, tuple):
+			for m in messages:
+				self.layout.label(text=m)
+		else:
+			self.layout.label(text=messages)
+
+	bpy.context.window_manager.popup_menu(draw, title = title, icon = icon)
+
+class MCPREP_UL_FeatureSets(bpy.types.UIList):
+  def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index=0, flag=0):
+    feature_set_entry: MCprepFeatureSets = item
+    if self.layout_type in {'DEFAULT', 'COMPACT'}:
+      row = layout.row()
+      row.prop(feature_set_entry, 'name', text="", emboss=False)
+
+      icon = 'CHECKBOX_HLT' if feature_set_entry.enabled else 'CHECKBOX_DEHLT'
+      row.enabled = feature_set_entry.enabled
+      layout.prop(feature_set_entry, 'enabled', text="", icon=icon, emboss=False)
+      elif self.layout_type in {'GRID'}:
+        pass
 
 class McprepPreference(bpy.types.AddonPreferences):
 	bl_idname = __package__
@@ -431,12 +452,8 @@ class McprepPreference(bpy.types.AddonPreferences):
 			('jmc2obj', 'jmc2obj', 'Select if exporter used was jmc2obj'),
 			('Mineways', 'Mineways', 'Select if exporter used was Mineways')],
 		name="Exporter")
-	preferences_tab: bpy.props.EnumProperty(
-		items=[
-			('settings', 'Settings', 'Change MCprep settings'),
-			('tutorials', 'Tutorials', 'View MCprep tutorials & other help'),
-			('tracker_updater', 'Tracking/Updater',
-				'Change tracking and updating settings')],
+	preferences_tab = bpy.props.EnumProperty(
+		items=preferences_tab_items,
 		name="Exporter")
 	verbose: bpy.props.BoolProperty(
 		name="Verbose logging",
@@ -467,6 +484,9 @@ class McprepPreference(bpy.types.AddonPreferences):
 			('experimental', 'Experimental', 'Enable experimental features')],
 		name="Feature set",
 		update=feature_set_update)
+	
+	mcprep_feature_sets: bpy.props.CollectionProperty(type=MCprepFeatureSets)
+	active_feature_set_index: IntProperty(name="Active Feature set index")
 
 	# addon updater preferences
 
@@ -718,7 +738,82 @@ class McprepPreference(bpy.types.AddonPreferences):
 
 			# updater draw function
 			addon_updater_ops.update_settings_ui(self, context)
+		elif self.preferences_tab == "feature_sets":
+			layout = self.layout
+			
+			layout.label(text="Feature Sets:")
+			
+			layout.operator("wm.mcprep_add_feature_set", text="Install Feature Set from File...", icon='FILEBROWSER')
+			
+			row = layout.row()
+			row.template_list(
+				'MCPREP_UL_FeatureSets',
+				'',
+				self, "mcprep_feature_sets",
+				self, "active_feature_set_index"
+			)
+			
+			# Clamp active index to ensure it is in bounds.
+			self.active_feature_set_index = max(0, min(self.active_feature_set_index, len(self.mcprep_feature_sets)-1))
+			
+			if len(self.mcprep_feature_sets) > 0:
+				active_fs = self.mcprep_feature_sets[self.active_feature_set_index]
+			
+			if active_fs:
+				 draw_feature_set_prefs(layout, context, active_fs)
+		
+		if not util.bv28():
+			layout.label(text="Don't forget to save user preferences!")
+		
 
+def draw_feature_set_prefs(layout: bpy.types.UILayout, _context, feature_set: MCPrepFeatureSets):
+	info = feature_set_list.get_info_dict(feature_set.module_name)
+			
+	description = feature_set.name
+	if 'description' in info:
+		 description = info['description']
+			
+	col = layout.column()
+	split_factor = 0.15
+			
+	split = col.row().split(factor=split_factor)
+	split.label(text="Description:")
+	split.label(text=description)
+	
+	mod = feature_set_list.get_module_safe(feature_set.module_name)
+	if mod:
+		split = col.row().split(factor=split_factor)
+		split.label(text="File:")
+		split.label(text=mod.__file__, translate=False)
+			
+		if 'author' in info:
+			split = col.row().split(factor=split_factor)
+			split.label(text="Author:")
+			split.label(text=info["author"])
+			
+		if 'version' in info:
+			split = col.row().split(factor=split_factor)
+			split.label(text="Version:")
+			split.label(text=".".join(str(x) for x in info['version']), translate=False)
+		if 'warning' in info:
+			split = col.row().split(factor=split_factor)
+			split.label(text="Warning:")
+			split.label(text="  " + info['warning'], icon='ERROR')
+			
+		split = col.row().split(factor=split_factor)
+		split.label(text="Internet:")
+		row = split.row()
+		if 'link' in info:
+			op = row.operator('wm.url_open', text="Repository", icon='URL')
+			op.url = info['link']
+		if 'doc_url' in info:
+			op = row.operator('wm.url_open', text="Documentation", icon='HELP')
+			op.url = info['doc_url']
+		if 'tracker_url' in info:
+			op = row.operator('wm.url_open', text="Report a Bug", icon='URL')
+			op.url = info['tracker_url']
+			
+		row.operator("wm.mcprep_remove_feature_set", text="Remove", icon='CANCEL')
 
 class MCPREP_PT_world_imports(bpy.types.Panel):
 	"""World importing related settings and tools"""
@@ -1912,6 +2007,20 @@ def mcprep_image_tools(self, context: Context) -> None:
 # Addon wide properties (aside from user preferences)
 # -----------------------------------------------
 
+class MCprepFeatureSets(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty()
+    module_name: bpy.props.StringProperty()
+
+    def toggle_feature_set(self, context):
+        feature_set_list.call_register_function(self.module_name, self.enabled)
+        util.get_user_preferences().update_external_rigs()
+
+    enabled: bpy.props.BoolProperty(
+        name="Enabled",
+        description="Whether this feature-set is registered or not",
+        update=toggle_feature_set,
+        default=True
+    )
 
 class McprepProps(bpy.types.PropertyGroup):
 	"""Properties saved to an individual scene"""
