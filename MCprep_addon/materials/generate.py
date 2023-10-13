@@ -748,13 +748,20 @@ def create_node(tree_nodes: Nodes, node_type: str, **attrs: Dict[str, Any]) -> N
 			"node_tree" can be referencing nodegroup or name of that nodegroup
 			"hide_sockets" to hide the sockets only display linked when need
 	"""
+	node = None
 	if node_type == 'ShaderNodeMixRGB':  # MixRGB in 3.4
 		if util.min_bv((3, 4, 0)):
 			node = tree_nodes.new('ShaderNodeMix')
 			node.data_type = 'RGBA'
-		else:
-			node = tree_nodes.new('ShaderNodeMixRGB')
-	else:
+	elif "Combine" in node_type or "Seperate" in node_type:
+		_type = "Combine" if "Combine" in ntype else "Seperate"
+		mode = node_type.split(_type)[1]
+		if util.min_bv((3, 3, 0)): 
+			# I forgot what version was it so assuming 3.3
+			node = tree_nodes.new(f'ShaderNode{_type}Color')
+			if mode != "Color":
+				node.mode = mode 
+	if node is None:
 		node = tree_nodes.new(node_type)
 	for attr, value in attrs.items():
 		if hasattr(node, attr) and attr != 'node_tree':
@@ -763,15 +770,20 @@ def create_node(tree_nodes: Nodes, node_type: str, **attrs: Dict[str, Any]) -> N
 			assign = bpy.data.node_groups[value] if type(value) is str else value
 			setattr(node, attr, assign)
 		elif attr == 'hide_sockets':  # option to hide socket for big node
-			node.inputs.foreach_set('hide', [value] * len(node.inputs))
-			node.outputs.foreach_set('hide', [value] * len(node.outputs))
+			if hasattr(node, "interface"):
+				for socket in node.interface.items_tree:
+					socket.hide = True
+			else:
+				node.inputs.foreach_set('hide', [value] * len(node.inputs))
+				node.outputs.foreach_set('hide', [value] * len(node.outputs))
 	return node
 
 
 def get_node_socket(node: Node, is_input: bool = True) -> list:
 	"""Gets the input or output sockets indicies for node"""
 	n_type = node.bl_idname
-	if n_type == 'ShaderNodeMix' or n_type == 'ShaderNodeMixRGB':
+	if n_type == 'ShaderNodeMix' \
+		or n_type == 'ShaderNodeMixRGB':
 		# Mix Color in 3.4 use socket indicies 0, 6, 7 for Factor, Color inputs
 		# and output with 2.
 		# MixRGB uses 0, 1, 2 and 0
@@ -784,6 +796,22 @@ def get_node_socket(node: Node, is_input: bool = True) -> list:
 		inputs = [i for i in range(len(node.inputs))]
 		outputs = [i for i in range(len(node.outputs))]
 	return inputs if is_input else outputs
+
+def connect_sockets(input, output):
+	"""A cross compatible of connect_sockets"""
+	if hasattr(bpy_extras.node_utils, "connect_sockets"):
+		# If exist use from the module
+		from bpy_extras.node_utils import connect_sockets
+		return connect_sockets(input, output)
+	else:
+		# A minimal version of connect_sockets
+		# Swap sockets if they are not passed in the proper order
+		if input.is_output and not output.is_output:
+			input, output = output, input
+		
+		input_node = output.node
+
+		return input_node.id_data.connect_sockets(input, output)
 
 # -----------------------------------------------------------------------------
 # Generating node groups
@@ -916,22 +944,22 @@ def texgen_specular(mat: Material, passes: Dict[str, Image], nodeInputs: List, u
 	saturateMixOut = get_node_socket(nodeSaturateMix, is_input=False)
 
 	# Links the nodes to the reroute nodes.
-	links.new(nodeTexDiff.outputs["Color"], nodeSaturateMix.inputs[saturateMixIn[1]])
-	links.new(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
-	links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
-	links.new(nodeTexSpec.outputs["Color"], nodeSpecInv.inputs["Color"])
+	connect_sockets(nodeTexDiff.outputs["Color"], nodeSaturateMix.inputs[saturateMixIn[1]])
+	connect_sockets(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
+	connect_sockets(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
+	connect_sockets(nodeTexSpec.outputs["Color"], nodeSpecInv.inputs["Color"])
 
 	for i in nodeInputs[0]:
-		links.new(nodeSaturateMix.outputs[saturateMixOut[0]], i)
+		connect_sockets(nodeSaturateMix.outputs[saturateMixOut[0]], i)
 	for i in nodeInputs[1]:
-		links.new(nodeTexDiff.outputs["Alpha"], i)
+		connect_sockets(nodeTexDiff.outputs["Alpha"], i)
 	if image_spec and use_reflections:
 		for i in nodeInputs[3]:
-			links.new(nodeSpecInv.outputs["Color"], i)
+			connect_sockets(nodeSpecInv.outputs["Color"], i)
 		for i in nodeInputs[5]:
-			links.new(nodeTexSpec.outputs["Color"], i)
+			connect_sockets(nodeTexSpec.outputs["Color"], i)
 	for i in nodeInputs[6]:
-		links.new(nodeNormal.outputs["Normal"], i)
+		connect_sockets(nodeNormal.outputs["Normal"], i)
 
 	# Mutes necessary nodes if no specular map
 	if image_spec:
@@ -1046,28 +1074,28 @@ def texgen_seus(mat: Material, passes: Dict[str, Image], nodeInputs: List, use_r
 	saturateMixOut = get_node_socket(nodeSaturateMix, is_input=False)
 
 	# Links the nodes to the reroute nodes.
-	links.new(nodeTexDiff.outputs["Color"], nodeSaturateMix.inputs[saturateMixIn[1]])
-	links.new(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
-	links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
-	links.new(nodeTexSpec.outputs["Color"], nodeSeperate.inputs["Image"])
-	links.new(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
+	connect_sockets(nodeTexDiff.outputs["Color"], nodeSaturateMix.inputs[saturateMixIn[1]])
+	connect_sockets(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
+	connect_sockets(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
+	connect_sockets(nodeTexSpec.outputs["Color"], nodeSeperate.inputs["Image"])
+	connect_sockets(nodeSeperate.outputs["R"], nodeSpecInv.inputs["Color"])
 
 	for i in nodeInputs[0]:
 		if i == nodeSaturateMix.outputs[saturateMixOut[0]]:
 			continue
-		links.new(nodeSaturateMix.outputs[saturateMixOut[0]], i)
+		connect_sockets(nodeSaturateMix.outputs[saturateMixOut[0]], i)
 	for i in nodeInputs[1]:
-		links.new(nodeTexDiff.outputs["Alpha"], i)
+		connect_sockets(nodeTexDiff.outputs["Alpha"], i)
 	if image_spec and use_reflections:
 		if use_emission:
 			for i in nodeInputs[2]:
-				links.new(nodeSeperate.outputs["B"], i)
+				connect_sockets(nodeSeperate.outputs["B"], i)
 		for i in nodeInputs[4]:
-			links.new(nodeSeperate.outputs["G"], i)
+			connect_sockets(nodeSeperate.outputs["G"], i)
 		for i in nodeInputs[3]:
-			links.new(nodeSpecInv.outputs["Color"], i)
+			connect_sockets(nodeSpecInv.outputs["Color"], i)
 	for i in nodeInputs[6]:
-		links.new(nodeNormal.outputs["Normal"], i)
+		connect_sockets(nodeNormal.outputs["Normal"], i)
 
 	# Mutes necessary nodes if no specular map
 	if image_spec:
@@ -1148,8 +1176,8 @@ def generate_base_material(
 			links = mat.node_tree.links 
 			for n in nodes:
 				if n.bl_idname == 'ShaderNodeBsdfPrincipled':
-					links.new(node_diff.outputs[0], n.inputs[0])
-					links.new(node_diff.outputs[1], n.inputs["Alpha"])
+					connect_sockets(node_diff.outputs[0], n.inputs[0])
+					connect_sockets(node_diff.outputs[1], n.inputs["Alpha"])
 					break
 			
 			env.log("Added blank texture node")
@@ -1213,6 +1241,10 @@ def matgen_cycles_simple(mat: Material, options: PrepOptions) -> Optional[bool]:
 
 	principled = create_node(nodes, "ShaderNodeBsdfPrincipled", location=(600, 0))
 	node_out = create_node(nodes, "ShaderNodeOutputMaterial", location=(900, 0))
+	
+	# For Specular naming change in 4.0
+	inputs = [inp.name for inp in principled.inputs]
+	specular_name = "Specular" if "Specular" in inputs else "Specular IOR Level"
 
 	# Sets default reflective values
 	if options.use_reflections and checklist(canon, "reflective"):
@@ -1235,12 +1267,12 @@ def matgen_cycles_simple(mat: Material, options: PrepOptions) -> Optional[bool]:
 	# Set values.
 	# Specular causes issues with how blocks look, so let's disable it.
 	nodeSaturateMix.inputs[saturateMixIn[0]].default_value = 1.0
-	principled.inputs["Specular"].default_value = 0
+	principled.inputs[specular_name].default_value = 0
 
 	# Connect nodes.
-	links.new(nodeTexDiff.outputs[0], nodeSaturateMix.inputs[saturateMixIn[1]])
-	links.new(nodeSaturateMix.outputs[saturateMixOut[0]], principled.inputs[0])
-	links.new(principled.outputs["BSDF"], node_out.inputs[0])
+	connect_sockets(nodeTexDiff.outputs[0], nodeSaturateMix.inputs[saturateMixIn[1]])
+	connect_sockets(nodeSaturateMix.outputs[saturateMixOut[0]], principled.inputs[0])
+	connect_sockets(principled.outputs["BSDF"], node_out.inputs[0])
 
 	if options.only_solid is True or checklist(canon, "solid"):
 		# faster, and appropriate for non-transparent (and refelctive?) materials
@@ -1249,7 +1281,7 @@ def matgen_cycles_simple(mat: Material, options: PrepOptions) -> Optional[bool]:
 			mat.blend_method = 'OPAQUE'  # eevee setting
 	else:
 		# non-solid (potentially, not necessarily though)
-		links.new(nodeTexDiff.outputs[1], principled.inputs["Alpha"])
+		connect_sockets(nodeTexDiff.outputs[1], principled.inputs["Alpha"])
 		if hasattr(mat, "blend_method"):  # 2.8 eevee settings
 			if hasattr(mat, "blend_method"):
 				mat.blend_method = 'HASHED'
@@ -1257,12 +1289,13 @@ def matgen_cycles_simple(mat: Material, options: PrepOptions) -> Optional[bool]:
 				mat.shadow_method = 'HASHED'
 
 	if options.use_emission_nodes and options.use_emission:
-		inputs = [inp.name for inp in principled.inputs]
 		if 'Emission Strength' in inputs:  # Later 2.9 versions only.
 			principled.inputs['Emission Strength'].default_value = 1
-		links.new(
+		# 4.0 naming change
+		emission_name = "Emission" if "Emission" in inputs else "Emission Color"
+		connect_sockets(
 			nodeSaturateMix.outputs[saturateMixOut[0]],
-			principled.inputs["Emission"])
+			principled.inputs[emission_name])
 
 	# reapply animation data if any to generated nodes
 	apply_texture_animation_pass_settings(mat, animated_data)
@@ -1324,6 +1357,9 @@ def matgen_cycles_principled(mat: Material, options: PrepOptions) -> Optional[bo
 	nodeOut = create_node(
 		nodes, "ShaderNodeOutputMaterial", location=(820, 0))
 
+	inputs = [inp.name for inp in principled.inputs]
+	specular_name = "Specular" if "Specular" in inputs else "Specular IOR Level"
+	
 	# Sets default transparency value
 	nodeMixTrans.inputs[0].default_value = 1
 	
@@ -1342,8 +1378,8 @@ def matgen_cycles_principled(mat: Material, options: PrepOptions) -> Optional[bo
 		principled.inputs["Metallic"].default_value = 0
 
 	# Connect nodes
-	links.new(nodeTrans.outputs["BSDF"], nodeMixTrans.inputs[1])
-	links.new(nodeMixTrans.outputs["Shader"], nodeOut.inputs[0])
+	connect_sockets(nodeTrans.outputs["BSDF"], nodeMixTrans.inputs[1])
+	connect_sockets(nodeMixTrans.outputs["Shader"], nodeOut.inputs[0])
 
 	nodeEmit = create_node(
 			nodes, "ShaderNodeEmission", location=(120, 140))
@@ -1365,20 +1401,20 @@ def matgen_cycles_principled(mat: Material, options: PrepOptions) -> Optional[bo
 		nodeEmitCam.inputs["Strength"].default_value = 4
 
 		# Create the links
-		links.new(principled.outputs["BSDF"], nodeMixEmit.inputs[1])
-		links.new(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs["Fac"])
-		links.new(nodeFalloff.outputs["Linear"], nodeEmit.inputs["Strength"])
-		links.new(nodeEmit.outputs["Emission"], nodeMixCam.inputs[1])
-		links.new(nodeEmitCam.outputs["Emission"], nodeMixCam.inputs[2])
-		links.new(nodeMixCam.outputs["Shader"], nodeMixEmit.inputs[2])
-		links.new(nodeMixEmit.outputs["Shader"], nodeMixTrans.inputs[2])
+		connect_sockets(principled.outputs["BSDF"], nodeMixEmit.inputs[1])
+		connect_sockets(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs["Fac"])
+		connect_sockets(nodeFalloff.outputs["Linear"], nodeEmit.inputs["Strength"])
+		connect_sockets(nodeEmit.outputs["Emission"], nodeMixCam.inputs[1])
+		connect_sockets(nodeEmitCam.outputs["Emission"], nodeMixCam.inputs[2])
+		connect_sockets(nodeMixCam.outputs["Shader"], nodeMixEmit.inputs[2])
+		connect_sockets(nodeMixEmit.outputs["Shader"], nodeMixTrans.inputs[2])
 
 		if options.use_emission:
 			nodeMixEmit.inputs[0].default_value = 1
 		else:
 			nodeMixEmit.inputs[0].default_value = 0
 	else:
-		links.new(principled.outputs[0], nodeMixTrans.inputs[2])
+		connect_sockets(principled.outputs[0], nodeMixTrans.inputs[2])
 
 
 	nodeInputs = [
@@ -1390,7 +1426,7 @@ def matgen_cycles_principled(mat: Material, options: PrepOptions) -> Optional[bo
 		[nodeMixEmit.inputs[0]],
 		[principled.inputs["Roughness"]],
 		[principled.inputs["Metallic"]],
-		[principled.inputs["Specular"]],
+		[principled.inputs[specular_name]],
 		[principled.inputs["Normal"]]]
 	
 	if not options.use_emission_nodes:
@@ -1409,7 +1445,7 @@ def matgen_cycles_principled(mat: Material, options: PrepOptions) -> Optional[bo
 		nodeOut.location = (620, 0)
 
 		if options.use_emission_nodes:
-			links.new(nodeMixEmit.outputs[0], nodeOut.inputs[0])
+			connect_sockets(nodeMixEmit.outputs[0], nodeOut.inputs[0])
 
 		# faster, and appropriate for non-transparent (and refelctive?) materials
 		principled.distribution = 'GGX'
@@ -1568,41 +1604,41 @@ def matgen_cycles_original(mat: Material, options: PrepOptions):
 		nodeMixMetallic.inputs["Fac"].default_value = 0
 
 	# Connect nodes
-	links.new(nodeMixDiff.outputs["Shader"], nodeMixMetallic.inputs[1])
-	links.new(nodeMathPower.outputs[0], nodeMixRGB.inputs[mixIn[0]])
-	links.new(nodeMathPower.outputs[0], nodeDiff.inputs["Roughness"])
-	links.new(nodeMixRGB.outputs[mixOut[0]], nodeFresnel.inputs["Normal"])
-	links.new(nodeFresnel.outputs[0], nodeMixRGBDiff.inputs[mixDiffIn[0]])
-	links.new(nodeGeometry.outputs["Incoming"], nodeMixRGB.inputs[mixIn[2]])
-	links.new(nodeBump.outputs["Normal"], nodeMixRGB.inputs[mixIn[1]])
-	links.new(
+	connect_sockets(nodeMixDiff.outputs["Shader"], nodeMixMetallic.inputs[1])
+	connect_sockets(nodeMathPower.outputs[0], nodeMixRGB.inputs[mixIn[0]])
+	connect_sockets(nodeMathPower.outputs[0], nodeDiff.inputs["Roughness"])
+	connect_sockets(nodeMixRGB.outputs[mixOut[0]], nodeFresnel.inputs["Normal"])
+	connect_sockets(nodeFresnel.outputs[0], nodeMixRGBDiff.inputs[mixDiffIn[0]])
+	connect_sockets(nodeGeometry.outputs["Incoming"], nodeMixRGB.inputs[mixIn[2]])
+	connect_sockets(nodeBump.outputs["Normal"], nodeMixRGB.inputs[mixIn[1]])
+	connect_sockets(
 		nodeMathPowerDiff.outputs["Value"],
 		nodeMixRGBDiff.inputs[mixDiffIn[1]])
-	links.new(
+	connect_sockets(
 		nodeMixRGBDiff.outputs[mixDiffOut[0]],
 		nodeMathMultiplyDiff.inputs[0])
-	links.new(nodeMathMultiplyDiff.outputs["Value"], nodeMixDiff.inputs["Fac"])
-	links.new(nodeDiff.outputs["BSDF"], nodeMixDiff.inputs[1])
-	links.new(nodeGlossDiff.outputs["BSDF"], nodeMixDiff.inputs[2])
-	links.new(
+	connect_sockets(nodeMathMultiplyDiff.outputs["Value"], nodeMixDiff.inputs["Fac"])
+	connect_sockets(nodeDiff.outputs["BSDF"], nodeMixDiff.inputs[1])
+	connect_sockets(nodeGlossDiff.outputs["BSDF"], nodeMixDiff.inputs[2])
+	connect_sockets(
 		nodeFresnelMetallic.outputs["Fac"],
 		nodeMixRGBMetallic.inputs[mixMetallicIn[0]])
-	links.new(
+	connect_sockets(
 		nodeMathMetallic.outputs["Value"],
 		nodeMixRGBMetallic.inputs[mixMetallicIn[2]])
-	links.new(
+	connect_sockets(
 		nodeMixRGBMetallic.outputs[mixMetallicOut[0]],
 		nodeGlossMetallic.inputs["Color"])
-	links.new(nodeGlossMetallic.outputs["BSDF"], nodeMixMetallic.inputs[2])
-	links.new(nodeMixMetallic.outputs["Shader"], nodeMixEmit.inputs[1])
-	links.new(nodeMixCam.outputs["Shader"], nodeMixEmit.inputs[2])
-	links.new(nodeTrans.outputs["BSDF"], nodeMixTrans.inputs[1])
-	links.new(nodeFalloff.outputs["Linear"], nodeEmit.inputs["Strength"])
-	links.new(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs["Fac"])
-	links.new(nodeEmit.outputs["Emission"], nodeMixCam.inputs[1])
-	links.new(nodeEmitCam.outputs["Emission"], nodeMixCam.inputs[2])
-	links.new(nodeMixEmit.outputs["Shader"], nodeMixTrans.inputs[2])
-	links.new(nodeMixTrans.outputs["Shader"], nodeOut.inputs["Surface"])
+	connect_sockets(nodeGlossMetallic.outputs["BSDF"], nodeMixMetallic.inputs[2])
+	connect_sockets(nodeMixMetallic.outputs["Shader"], nodeMixEmit.inputs[1])
+	connect_sockets(nodeMixCam.outputs["Shader"], nodeMixEmit.inputs[2])
+	connect_sockets(nodeTrans.outputs["BSDF"], nodeMixTrans.inputs[1])
+	connect_sockets(nodeFalloff.outputs["Linear"], nodeEmit.inputs["Strength"])
+	connect_sockets(nodeLightPath.outputs["Is Camera Ray"], nodeMixCam.inputs["Fac"])
+	connect_sockets(nodeEmit.outputs["Emission"], nodeMixCam.inputs[1])
+	connect_sockets(nodeEmitCam.outputs["Emission"], nodeMixCam.inputs[2])
+	connect_sockets(nodeMixEmit.outputs["Shader"], nodeMixTrans.inputs[2])
+	connect_sockets(nodeMixTrans.outputs["Shader"], nodeOut.inputs["Surface"])
 
 	nodeInputs = [
 		[
@@ -1636,7 +1672,7 @@ def matgen_cycles_original(mat: Material, options: PrepOptions):
 		nodes.remove(nodeTrans)
 		nodes.remove(nodeMixTrans)
 		nodeOut.location = (1540, 0)
-		links.new(nodeMixEmit.outputs[0], nodeOut.inputs[0])
+		connect_sockets(nodeMixEmit.outputs[0], nodeOut.inputs[0])
 
 		if hasattr(mat, "blend_method"):
 			mat.blend_method = 'OPAQUE'  # eevee setting
@@ -1758,15 +1794,15 @@ def matgen_special_water(mat: Material, passes: Dict[str, Image]) -> Optional[bo
 	nodeGlass.inputs[2].default_value = 1.333
 
 	# Connect nodes
-	links.new(nodeTexDiff.outputs[0], nodeBrightContrast.inputs[0])
-	links.new(nodeBrightContrast.outputs[0], nodeSaturateMix.inputs[1])
-	links.new(nodeSaturateMix.outputs[saturateMixOut[0]], nodeGlass.inputs[0])
-	links.new(nodeGlass.outputs[0], nodeMixTrans.inputs[2])
-	links.new(nodeTrans.outputs[0], nodeMixTrans.inputs[1])
-	links.new(nodeMixTrans.outputs[0], nodeOut.inputs[0])
-	links.new(nodeTexNorm.outputs[0], nodeNormalInv.inputs[0])
-	links.new(nodeNormalInv.outputs[0], nodeNormal.inputs[0])
-	links.new(nodeNormal.outputs[0], nodeGlass.inputs[3])
+	connect_sockets(nodeTexDiff.outputs[0], nodeBrightContrast.inputs[0])
+	connect_sockets(nodeBrightContrast.outputs[0], nodeSaturateMix.inputs[1])
+	connect_sockets(nodeSaturateMix.outputs[saturateMixOut[0]], nodeGlass.inputs[0])
+	connect_sockets(nodeGlass.outputs[0], nodeMixTrans.inputs[2])
+	connect_sockets(nodeTrans.outputs[0], nodeMixTrans.inputs[1])
+	connect_sockets(nodeMixTrans.outputs[0], nodeOut.inputs[0])
+	connect_sockets(nodeTexNorm.outputs[0], nodeNormalInv.inputs[0])
+	connect_sockets(nodeNormalInv.outputs[0], nodeNormal.inputs[0])
+	connect_sockets(nodeNormal.outputs[0], nodeGlass.inputs[3])
 
 	# Normal update
 	util.apply_colorspace(nodeTexNorm, 'Non-Color')
@@ -1890,17 +1926,17 @@ def matgen_special_glass(mat: Material, passes: Dict[str, Image]) -> Optional[bo
 	nodeBrightContrast.inputs[2].default_value = 1
 
 	# Connect nodes
-	links.new(nodeGlass.outputs["BSDF"], nodeMixTrans.inputs[1])
-	links.new(nodeDiff.outputs["BSDF"], nodeMixTrans.inputs[2])
-	links.new(nodeTexDiff.outputs["Alpha"], nodeBrightContrast.inputs["Color"])
-	links.new(nodeBrightContrast.outputs[0], nodeMixTrans.inputs[0])
+	connect_sockets(nodeGlass.outputs["BSDF"], nodeMixTrans.inputs[1])
+	connect_sockets(nodeDiff.outputs["BSDF"], nodeMixTrans.inputs[2])
+	connect_sockets(nodeTexDiff.outputs["Alpha"], nodeBrightContrast.inputs["Color"])
+	connect_sockets(nodeBrightContrast.outputs[0], nodeMixTrans.inputs[0])
 
-	links.new(nodeDiff.outputs[0], nodeMixTrans.inputs[2])
-	links.new(nodeMixTrans.outputs[0], nodeOut.inputs[0])
-	links.new(nodeTexDiff.outputs["Color"], nodeDiff.inputs[0])
-	links.new(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
-	links.new(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
-	links.new(nodeNormal.outputs[0], nodeDiff.inputs[2])
+	connect_sockets(nodeDiff.outputs[0], nodeMixTrans.inputs[2])
+	connect_sockets(nodeMixTrans.outputs[0], nodeOut.inputs[0])
+	connect_sockets(nodeTexDiff.outputs["Color"], nodeDiff.inputs[0])
+	connect_sockets(nodeTexNorm.outputs["Color"], nodeNormalInv.inputs["Color"])
+	connect_sockets(nodeNormalInv.outputs["Color"], nodeNormal.inputs["Color"])
+	connect_sockets(nodeNormal.outputs[0], nodeDiff.inputs[2])
 
 	# Normal update
 	util.apply_colorspace(nodeTexNorm, 'Non-Color')
