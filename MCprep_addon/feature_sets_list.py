@@ -1,10 +1,14 @@
 import bpy
+from bpy.props import StringProperty
+
 import os
 import re
 import importlib
 import traceback
+from collections import defaultdict
 from zipfile import ZipFile
 from shutil import rmtree
+from typing import TYPE_CHECKING, List, Sequence, Optional
 
 from . import feature_sets
 from . import util
@@ -12,11 +16,19 @@ from . import util
 if TYPE_CHECKING:
     from .mcprep_ui import MCprepFeatureSets
 
+def infinite_default_dict():
+    return defaultdict(infinite_default_dict)
 
+# Public variables
 DEFAULT_NAME = 'mcprep'
+PROMOTED_FEATURE_SETS = []
+rigs = {}
+implementation_rigs = {}
+metarigs = infinite_default_dict()
 
 # noinspection PyProtectedMember
 INSTALL_PATH = feature_sets._install_path()
+
 NAME_PREFIX = feature_sets.__name__.split('.')
 def install_path(*, create=False):
     if not os.path.exists(INSTALL_PATH):
@@ -27,7 +39,14 @@ def install_path(*, create=False):
 
     return INSTALL_PATH
 
-
+def get_external_rigs(set_list):
+    # Clear and fill
+    for rig in list(rigs.keys()):
+        if rigs[rig]["feature_set"] != DEFAULT_NAME:
+            rigs.pop(rig)
+            if rig in implementation_rigs:
+                implementation_rigs.pop(rig)
+    
 def get_installed_modules_names() -> List[str]:
     """Return a list of module names of all feature sets in the file system."""
     features_path = get_install_path()
@@ -44,9 +63,29 @@ def get_installed_modules_names() -> List[str]:
 
     return sets
 
+def get_install_path(*, create=False):
+    if not os.path.exists(INSTALL_PATH):
+        if create:
+            os.makedirs(INSTALL_PATH, exist_ok=True)
+        else:
+            return None
+
+    return INSTALL_PATH
+
+def get_external_metarigs(feature_module_names: list[str]):
+    unregister()
+
+    # Clear and fill metarigs public variables
+    metarigs.clear()
+
+    for module_name in feature_module_names:
+        # noinspection PyBroadException
+        print("")
+
+    register()
 
 def get_prefs_feature_sets() -> Sequence['MCprepFeatureSets']:
-    return util.get_prefs().mcprep_feature_sets
+    return util.get_user_preferences().mcprep_feature_sets
 
 
 def get_enabled_modules_names() -> List[str]:
@@ -156,10 +195,8 @@ def verify_feature_set_archive(zipfile):
         if len(parts) == 2 and parts[1] == '__init__.py':
             init_found = True
 
-        if len(parts) > 2 and parts[1] in {'rigs', 'metarigs'} and parts[-1] == '__init__.py':
-            data_found = True
 
-    return dirname, init_found, data_found
+    return dirname, init_found
 
 
 # noinspection PyPep8Naming
@@ -181,11 +218,11 @@ class MCPREP_OT_AddFeatureSet(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def execute(self, context):
-        addon_prefs = util.getprefs()
+        addon_prefs = util.get_user_preferences()
         mcprep_config_path = get_install_path(create=True)
 
         with ZipFile(bpy.path.abspath(self.filepath), 'r') as zip_archive:
-            base_dirname, init_found, data_found = verify_feature_set_archive(zip_archive)
+            base_dirname, init_found = verify_feature_set_archive(zip_archive)
 
             if not base_dirname:
                 self.report({'ERROR'}, "The feature set archive must contain one base directory.")
@@ -205,10 +242,10 @@ class MCPREP_OT_AddFeatureSet(bpy.types.Operator):
                     {'ERROR'}, f"The '{DEFAULT_NAME}' name is not allowed for feature sets.")
                 return {'CANCELLED'}
 
-            if not init_found or not data_found:
+            if not init_found:
                 self.report(
                     {'ERROR'},
-                    "The feature set archive has no rigs or metarigs, or is missing __init__.py.")
+                    "The feature set archive is missing __init__.py.")
                 return {'CANCELLED'}
 
             base_dir = os.path.join(mcprep_config_path, base_dirname)
@@ -277,6 +314,8 @@ class MCPREP_OT_RemoveFeatureSet(bpy.types.Operator):
 
         return {'FINISHED'}
 
+
+
 classes = (
 	MCPREP_OT_AddFeatureSet,
 	MCPREP_OT_RemoveFeatureSet
@@ -288,4 +327,4 @@ def register():
 
 def unregister():
 	for cls in classes:
-		bpy.utils.unregister_class(rsclass)
+		bpy.utils.unregister_class(cls)

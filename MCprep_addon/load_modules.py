@@ -147,6 +147,11 @@ if "generate" in locals():
 else:
 	from .materials import generate
 
+if "feature_sets_list" in locals():
+	importlib.reload(feature_sets_list)
+else:
+	from . import feature_sets_list
+
 
 # Only include those with a register function, which is not all
 module_list = (
@@ -166,9 +171,10 @@ module_list = (
 	item,
 	effects,
 	world_tools,
+	feature_sets_list,
 	# bridge,
 	mcprep_ui,
-	optimize_scene
+	optimize_scene,
 )
 
 
