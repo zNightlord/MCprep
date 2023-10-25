@@ -762,7 +762,7 @@ class McprepPreference(bpy.types.AddonPreferences):
 
 	def refresh_installed_feature_sets(self):
 		"""Synchronize preferences entries with what's actually in the file system."""
-		feature_set_prefs = self.rigify_feature_sets
+		feature_set_prefs = self.mcprep_feature_sets
 
 		module_names = feature_sets_list.get_installed_modules_names()
 
