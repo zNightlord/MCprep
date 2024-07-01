@@ -447,7 +447,7 @@ class MCPREP_OT_import_world_split(bpy.types.Operator, ImportHelper):
 	bl_options = {'REGISTER', 'UNDO'}
 
 	filter_glob: bpy.props.StringProperty(
-		default="*.obj;*.mtl",
+		default="*.obj;*.mtl;*.usda;*.usdc",
 		options={'HIDDEN'})
 	fileselectparams = "use_filter_blender"
 	skipUsage: bpy.props.BoolProperty(
@@ -472,6 +472,8 @@ class MCPREP_OT_import_world_split(bpy.types.Operator, ImportHelper):
 			return {'CANCELLED'}
 		if not self.filepath.lower().endswith(".obj"):
 			self.report({"ERROR"}, "You must select a .obj file to import")
+			return {'CANCELLED'}
+		if not self.filepath.lower().endswitch(".usda") or self.filepath.lower().endswitch(".usdc"):
 			return {'CANCELLED'}
 
 		res = enble_obj_importer()
