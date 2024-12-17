@@ -101,6 +101,10 @@ def get_mc_canonical_name(name: str) -> Tuple[str, Optional[Form]]:
 		# mixed up with the new "water": "painting/water" texture.
 		general_name = "water_still"
 
+	if general_name == "grass":
+		# Pre version format 22
+		general_name = "short_grass"
+
 	if general_name in env.json_data["blocks"]["block_mapping_mc"]:
 		canon = env.json_data["blocks"]["block_mapping_mc"][general_name]
 		form = "mc" if not jmc_prefix else "jmc2obj"
@@ -588,7 +592,7 @@ def get_textures(material: Material) -> Dict[str, Image]:
 
 def find_additional_passes(image_file: Path) -> Dict[str, Image]:
 	"""Find relevant passes like normal and spec in same folder as image."""
-	print("What is this?", image_file)
+	# print("What is this?", image_file) # just gonna comment this out for now
 	abs_img_file = bpy.path.abspath(str(image_file))  # needs to be blend file relative
 	env.log(f"\tFind additional passes for: {image_file}", vv_only=True)
 	if not os.path.isfile(abs_img_file):
