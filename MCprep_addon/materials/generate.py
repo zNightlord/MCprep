@@ -101,9 +101,9 @@ def get_mc_canonical_name(name: str) -> Tuple[str, Optional[Form]]:
 		# mixed up with the new "water": "painting/water" texture.
 		general_name = "water_still"
 
-	if "_stem_stage" in general_name:
+	if "_stem" in general_name:
 		# For melon/pumpkin stem stage map to only melon_stem/pumpkin_stem
-		general_name = general_name.split("_stage")[0]
+		general_name = general_name.rsplit("_", 1)[0]
 
 	if general_name in env.json_data["blocks"]["block_mapping_mc"]:
 		canon = env.json_data["blocks"]["block_mapping_mc"][general_name]
