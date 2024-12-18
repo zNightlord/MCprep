@@ -16,6 +16,7 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
+import json
 import os
 from typing import Dict, Optional, List, Any, Tuple, Union, cast
 from pathlib import Path
@@ -220,6 +221,31 @@ def find_from_texturepack(blockname: str, resource_folder: Optional[Path]=None) 
 	return res
 
 
+def get_format_version_texturepack(resource_folder: Optional[Path]=None) -> Union[int, MCprepError]:
+	""" Get texturepack format version"""
+	if resource_folder is None:
+		# default to internal pack
+		resource_folder = Path(cast(
+			str,
+			bpy.path.abspath(bpy.context.scene.mcprep_texturepack_path)
+		))
+
+	if not resource_folder.exists() or not resource_folder.is_dir():
+		env.log("Error, resource folder does not exist")
+		line, file = env.current_line_and_file()
+		return MCprepError(FileNotFoundError(), line, file, f"Resource pack folder at {resource_folder} does not exist!")
+
+	# Resource folder is ame level as assets folder
+	file = Path(resource_folder, "pack.mcmeta")
+	if (file.is_file()):
+		with open(file, 'r') as f:
+			data = json.load(f)
+			print(data)
+			return data["pack"]["pack_format"]
+	# return the unaffected change version
+	return 21
+
+
 def detect_form(materials: List[Material]) -> Optional[Form]:
 	"""Function which, given the input materials, guesses the exporter form.
 
@@ -371,6 +397,9 @@ def set_texture_pack(
 	run the swap (and auto load e.g. normals and specs if avail.)
 	"""
 	mc_name, _ = get_mc_canonical_name(material.name)
+	texture_packformat = get_format_version_texturepack(folder)
+	if (material.name == "grass" and texture_packformat > 21):
+		mc_name = "short_grass"
 	image = find_from_texturepack(mc_name, folder)
 	if isinstance(image, MCprepError):
 		if image.msg:
