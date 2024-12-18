@@ -464,7 +464,6 @@ def update_model_list(context: Context):
 		# Shulkers, Hanging Signs, Signs are entities, put it here for now since they have a lot of variants
 		is_contains = re.search(r"template_|orientable|cube|_shulker_box|_sign|light_0|light_1", name)
 		if is_contains:
-			print(name)
 			continue
 		# Single word condition filter
 		# block single block parent, base parent of most MC contain gui displays

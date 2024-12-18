@@ -238,7 +238,6 @@ def get_format_version_texturepack(resource_folder: Optional[Path]=None) -> Unio
 	if (file.is_file()):
 		with open(file, 'r') as f:
 			data = json.load(f)
-			print(data)
 			return data["pack"]["pack_format"]
 	# return the unaffected change version, 22
 	return 21
