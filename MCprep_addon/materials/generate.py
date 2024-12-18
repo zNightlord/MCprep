@@ -101,9 +101,9 @@ def get_mc_canonical_name(name: str) -> Tuple[str, Optional[Form]]:
 		# mixed up with the new "water": "painting/water" texture.
 		general_name = "water_still"
 
-	if general_name == "grass":
-		# Pre version format 22
-		general_name = "short_grass"
+	# if general_name == "grass":
+	# 	# Pre version format 22
+	# 	general_name = "short_grass"
 
 	if general_name in env.json_data["blocks"]["block_mapping_mc"]:
 		canon = env.json_data["blocks"]["block_mapping_mc"][general_name]

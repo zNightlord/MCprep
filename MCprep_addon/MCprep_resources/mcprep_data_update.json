@@ -1670,7 +1670,7 @@
 			"gradient_up": "entity/shield/gradient_up",
 			"graham": "painting/graham",
 			"granite": "granite",
-			"grass": "colormap/grass",
+			"grass": "grass",
 			"grass_block_side": "grass_block_side",
 			"grass_block_side_overlay": "grass_block_side_overlay",
 			"grass_block_snow": "grass_block_snow",
@@ -4631,6 +4631,7 @@
 		"shulker_box",
 		"sunflower",
 		"water_still",
-		"water"
+		"water",
+		"conduit"
 	]
 }

@@ -457,18 +457,19 @@ def update_model_list(context: Context):
 
 		# Filter out models that can't spawn. Typically those that reference
 		# #fire or the likes in the file.
+		# These blocks just don't make sense to put in the for "unspawnable_for_now"
 		# Template base of that block for example candle, cake with candles
-		# Orient blocks base
-		# cube same as orientable 
-		# Shulkers, Hanging Signs, Signs are entities. Filter it out for now.
-		# Light blocks are just special no geometry block with 15 states
+		# Orient blocks base, cube same as orientable (no texture)
+		# Light blocks are just special no geometry block with 15 states of light levels
+
+		# Shulkers, Hanging Signs, Signs are entities, put it here since they have a lot of variants
 		is_contains = re.search(r"template_|orientable|cube|_shulker_box|_sign|light_0|light_1", name)
 		if is_contains:
 			print(name)
 			continue
 		# Single word condition filter
 		# block single block parent, base parent of most MC contain gui displays
-		if name in ["block", "air", "conduit", "barrier", "structure_void"]:
+		if name in ["block", "air", "barrier", "structure_void"]:
 			continue
 		# Filter the "unspawnable_for_now"
 		# Either entity block or block that doesn't good for json
