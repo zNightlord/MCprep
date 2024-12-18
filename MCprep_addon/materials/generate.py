@@ -16,6 +16,7 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
+import json
 import os
 from typing import Dict, Optional, List, Any, Tuple, Union, cast
 from pathlib import Path
@@ -216,6 +217,33 @@ def find_from_texturepack(blockname: str, resource_folder: Optional[Path]=None) 
 	return res
 
 
+def get_format_version_texturepack(resource_folder: Optional[Path]=None) -> Union[int, MCprepError]:
+	""" Get texturepack format version
+
+	See https://minecraft.wiki/w/Pack_format#List_of_resource_pack_formats"""
+	if resource_folder is None:
+		# default to internal pack
+		resource_folder = Path(cast(
+			str,
+			bpy.path.abspath(bpy.context.scene.mcprep_texturepack_path)
+		))
+
+	if not resource_folder.exists() or not resource_folder.is_dir():
+		env.log("Error, resource folder does not exist")
+		line, file = env.current_line_and_file()
+		return MCprepError(FileNotFoundError(), line, file, f"Resource pack folder at {resource_folder} does not exist!")
+
+	# Resource folder is same level as assets folder
+	file = Path(resource_folder, "pack.mcmeta")
+	if (file.is_file()):
+		with open(file, 'r') as f:
+			data = json.load(f)
+			print(data)
+			return data["pack"]["pack_format"]
+	# return the unaffected change version, 22
+	return 21
+
+
 def detect_form(materials: List[Material]) -> Optional[Form]:
 	"""Function which, given the input materials, guesses the exporter form.
 
@@ -367,6 +395,10 @@ def set_texture_pack(
 	run the swap (and auto load e.g. normals and specs if avail.)
 	"""
 	mc_name, _ = get_mc_canonical_name(material.name)
+	texture_pack_format = get_format_version_texturepack(folder)
+	# grass rename to short_grass in MC 1.20.3 with pack format version 22
+	if (material.name == "grass" and texture_pack_format > 21):
+		mc_name = "short_grass"
 	image = find_from_texturepack(mc_name, folder)
 	if isinstance(image, MCprepError):
 		if image.msg:
@@ -588,7 +620,7 @@ def get_textures(material: Material) -> Dict[str, Image]:
 
 def find_additional_passes(image_file: Path) -> Dict[str, Image]:
 	"""Find relevant passes like normal and spec in same folder as image."""
-	print("What is this?", image_file)
+	# print("What is this?", image_file) # just gonna comment this out for now
 	abs_img_file = bpy.path.abspath(str(image_file))  # needs to be blend file relative
 	env.log(f"\tFind additional passes for: {image_file}", vv_only=True)
 	if not os.path.isfile(abs_img_file):

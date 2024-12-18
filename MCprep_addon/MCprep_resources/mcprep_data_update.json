@@ -4631,6 +4631,7 @@
 		"shulker_box",
 		"sunflower",
 		"water_still",
-		"water"
+		"water",
+		"conduit"
 	]
 }
