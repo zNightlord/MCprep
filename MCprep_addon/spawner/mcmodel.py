@@ -48,6 +48,12 @@ except ImportError:
 	# Blender, we just set it to the generic object type
 	FileHandler = object
 
+# Format type
+MC_FORMAT_BEDROCK_GEO    = "bedrock_geometry"
+MC_FORMAT_BEDROCK_ENTITY = "bedrock_entity"
+MC_FORMAT_JAVA_MODEL     = "java_model"
+MC_FORMAT_UNKNOWN        = "unknown"
+
 # Constants for Directions and Faces
 NORTH_DIR = "north"
 SOUTH_DIR = "south"
@@ -57,6 +63,49 @@ WEST_DIR = "west"
 EAST_DIR = "east"
 
 FACE_DIRECTIONS = (NORTH_DIR, SOUTH_DIR, UP_DIR, DOWN_DIR, WEST_DIR, EAST_DIR)
+
+
+def detect_mc_format(source: Union[dict, str, Path]) -> str:
+    """
+    Inspect a JSON file or already-parsed dict and identify its Minecraft format.
+
+    Returns one of the ``MC_FORMAT_*`` constants
+
+    Parameters
+    ----------
+    source
+        Either a dsot (already-parsed JSON), a file path string, or a
+        Path.  File paths are read and parsed automatically.
+
+    """
+    # ── Load from file if needed ───────────────────────────────────────────────
+    if isinstance(source, (str, Path)):
+        try:
+            with open(source, "r", encoding="utf-8") as fh:
+                data: dict = json.load(fh)
+        except Exception:
+            return MC_FORMAT_UNKNOWN
+    else:
+        data = source
+
+    if not isinstance(data, dict):
+        return MC_FORMAT_UNKNOWN
+
+    # ── Bedrock geometry (modern, 1.16+) ───────────────────────────────────────
+    if "minecraft:geometry" in data:
+        return MC_FORMAT_BEDROCK_GEO
+
+    # ── Bedrock client entity descriptor ──────────────────────────────────────
+    if "minecraft:client_entity" in data:
+        return MC_FORMAT_BEDROCK_ENTITY
+
+    # ── Java Edition block/item model ─────────────────────────────────────────
+    # Java models never use "format_version" (a Bedrock convention).
+    if "format_version" not in data:
+        if "elements" in data or "parent" in data or "textures" in data:
+            return MC_FORMAT_JAVA_MODEL
+
+    return MC_FORMAT_UNKNOWN
 
 # -----------------------------------------------------------------------------
 # Core MC model functions and implementation
